@@ -14,6 +14,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
+import com.duli.bo.UpdatedUserBO;
+import com.duli.grace.result.GraceJSONResult;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import javax.validation.Valid;
 
 @Api(tags = "UserInfoController 用户信息与统计模块")
 @RequestMapping("/userInfo")
@@ -58,5 +63,29 @@ public class UserInfoController extends com.duli.config.BaseInfoProperties { // 
         userVO.setTotalLikeMeCounts(likedVlogerCounts);
 
         return GraceJSONResult.success(userVO);
+    }
+
+
+    @ApiOperation(value = "修改用户信息")
+    @PostMapping("modifyUserInfo")
+    // 加上 @Valid 让 BO 里的 @NotBlank 等校验生效
+    // 加入了valid注解之后就不用去后端判断前端有没有传入必须的参数了
+    public GraceJSONResult modifyUserInfo(@RequestBody @Valid UpdatedUserBO updatedUserBO,
+                                          HttpServletRequest request) {
+        //@Valid 就是一个“开关”，用来激活BO里写的那些校验规则：控制是否真的不为空等
+        // 1. 安全核心：从 request 中拿当前真正登录的用户 ID
+        String currentUserId = (String) request.getAttribute("currentUserId");
+        if (StringUtils.isBlank(currentUserId)) {
+            return GraceJSONResult.errorMsg("当前未登录");
+        }
+
+        // 2. 绝对防越权：不管前端有没有传 id，强行覆盖为当前登录用户的 id！
+        updatedUserBO.setId(currentUserId);
+
+        // 3. 调用 Service 执行修改
+        Users updatedUser = userService.updateUserInfo(updatedUserBO);
+
+        // 4. 返回成功，已采用 success
+        return GraceJSONResult.success(updatedUser);
     }
 }

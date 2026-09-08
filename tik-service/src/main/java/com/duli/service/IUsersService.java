@@ -1,6 +1,7 @@
 package com.duli.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import com.duli.bo.UpdatedUserBO;
 import com.duli.pojo.Users;
 
 /**
@@ -16,4 +17,6 @@ public interface IUsersService extends IService<Users> {
      * 新用户自动注册，并初始化默认属性
      */
     Users createUser(String mobile);
+
+    Users updateUserInfo(UpdatedUserBO updatedUserBO);
 }
