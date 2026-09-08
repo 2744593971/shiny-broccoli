@@ -17,9 +17,9 @@ import org.springframework.beans.BeanUtils;
 @Service
 public class UsersServiceImpl extends ServiceImpl<UsersMapper, Users> implements IUsersService {
 
-    // 默认的头像和背景图（你可以先随便填个网图的链接，以后再换成你自己云存储的图片）
-    private static final String DEFAULT_AVATAR = "https://javaweb114514.oss-cn-shenzhen.aliyuncs.com/0d9b86d0-9a33-4a0f-aba7-dc76994ba860.jpg";
-    private static final String DEFAULT_BG_IMG = "https://javaweb114514.oss-cn-shenzhen.aliyuncs.com/0d9b86d0-9a33-4a0f-aba7-dc76994ba860.jpg";
+    // 默认的头像和背景图
+    private static final String DEFAULT_AVATAR = "https://javaweb114514.oss-cn-shenzhen.aliyuncs.com/face/2097248744402698241/c5bae22d-50f0-4e92-a149-d7932ea54e11.png";
+    private static final String DEFAULT_BG_IMG = "https://javaweb114514.oss-cn-shenzhen.aliyuncs.com/face/2097248744402698241/726E44AF8640E0DE3FD5F39F0C856234.png";
 
     @Transactional(rollbackFor = Exception.class)
     @Override

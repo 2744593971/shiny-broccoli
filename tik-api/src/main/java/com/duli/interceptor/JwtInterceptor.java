@@ -45,6 +45,10 @@ public class JwtInterceptor implements HandlerInterceptor {
         }
 
         // 2. ⭐️ 第二重校验：结合 Redis 判断是否登出或被顶号
+        /*
+        踢下线机制：
+        第二个用户登录之后会生成同样的redis
+         */
         String userId = JwtUtil.getUserId(userToken);
         String redisToken = stringRedisTemplate.opsForValue().get("USER_TOKEN:" + userId);
 

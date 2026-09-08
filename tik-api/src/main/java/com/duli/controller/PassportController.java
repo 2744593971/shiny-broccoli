@@ -74,6 +74,7 @@ public class PassportController {
 
         // 生成6位随机验证码
         String code = String.valueOf((int) ((Math.random() * 9 + 1) * 100000));
+        log.info("验证码为：{}", code);
 
         try {
             // 发送邮件
@@ -129,8 +130,14 @@ public class PassportController {
         // 5. 生成 JWT Token
         String token = JwtUtil.createToken(user.getId(), user.getMobile());
 
-        //
-        // 6. 将 Token 放入 Redis，用于拦截器拦截校验
+
+        /*6. 将 Token 放入 Redis，用于拦截器拦截校验
+        ⭐
+        如果以后App想做成微信那种“手机端 + 电脑端”可以同时在线的效果，也很简单，
+        只需要把 Redis 的 Key 改造一下，加上设备标识就可以
+        手机端存：USER_TOKEN:张三ID:Mobile;
+        电脑端存：USER_TOKEN:张三ID:PC
+         */
         //!!!!!!!！！！！
         //纯粹的 JWT 有一个致命的弱点 —— “一旦签发，无法主动销毁“
         redisTemplate.opsForValue().set("USER_TOKEN:" + user.getId(), token, 7, TimeUnit.DAYS);

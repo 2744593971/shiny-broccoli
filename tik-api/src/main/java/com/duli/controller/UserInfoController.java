@@ -3,6 +3,7 @@ package com.duli.controller;
 import com.duli.grace.result.GraceJSONResult;
 import com.duli.pojo.Users;
 import com.duli.service.IUsersService;
+import com.duli.service.impl.AliyunOSSService;
 import com.duli.vo.UserVO;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -10,16 +11,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
 
 import com.duli.bo.UpdatedUserBO;
 import com.duli.grace.result.GraceJSONResult;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.multipart.MultipartFile;
 
 import javax.validation.Valid;
 
@@ -77,21 +75,8 @@ public class UserInfoController extends com.duli.config.BaseInfoProperties { // 
     public GraceJSONResult modifyUserInfo(@RequestBody @Valid UpdatedUserBO updatedUserBO,
                                           HttpServletRequest request) {
         //@Valid 就是一个“开关”，用来激活BO里写的那些校验规则：控制是否真的不为空等
-//        // 1. 安全核心：从 request 中拿当前真正登录的用户 ID
-//        String currentUserId = (String) request.getAttribute("currentUserId");
-//        if (StringUtils.isBlank(currentUserId)) {
-//            return GraceJSONResult.errorMsg("当前未登录");
-//        }
-//
-//        // 2. 绝对防越权：不管前端有没有传 id，强行覆盖为当前登录用户的 id！
-//        updatedUserBO.setId(currentUserId);
-//
-//        // 3. 调用 Service 执行修改
-//        Users updatedUser = userService.updateUserInfo(updatedUserBO);
-//
-//        // 4. 返回成功，已采用 success
-//        return GraceJSONResult.success(updatedUser);
-        // 1. 🌟 安全第一：绝对不信任前端传的 ID，直接从拦截器塞进来的 Token 里取真实 ID！
+        //  1.安全核心：从 request 中拿当前真正登录的用户 ID
+        //  🌟 安全第一：绝对不信任前端传的 ID，直接从拦截器塞进来的 Token 里取真实 ID！
         String currentUserId = (String) request.getAttribute("currentUserId");
         if (StringUtils.isBlank(currentUserId)) {
             return GraceJSONResult.errorMsg("当前未登录");
@@ -121,4 +106,52 @@ public class UserInfoController extends com.duli.config.BaseInfoProperties { // 
 
         return GraceJSONResult.success(userVO);
     }
+
+    @Autowired
+    private AliyunOSSService aliyunOSSService;
+    // 对应前端的 URL: /userInfo/modifyImage
+    @PostMapping("/modifyImage")
+    public GraceJSONResult modifyImage(@RequestParam("userId") String userId,
+                                       @RequestParam("type") Integer type,
+                                       @RequestParam("file") MultipartFile file,
+                                       HttpServletRequest request) throws Exception {
+
+        // 1. 🌟 安全校验：防止前端伪造 userId
+        String currentUserId = (String) request.getAttribute("currentUserId");
+        if (StringUtils.isBlank(currentUserId) || !currentUserId.equals(userId)) {
+            return GraceJSONResult.errorMsg("当前未登录或用户身份异常");
+        }
+
+        // 2. 核心调用：一行代码拿到外网可以访问的阿里云图片链接！
+        String imageUrl = aliyunOSSService.uploadFile(file, currentUserId);
+
+        // 3. 更新数据库
+        Users user = new Users();
+        user.setId(currentUserId); // 强制使用安全的 currentUserId
+
+        // type=1 是修改背景图，type=2 是修改头像
+        if (type == 1) {
+            log.info("修改背景");
+            user.setBgImg(imageUrl);
+        } else if (type == 2) {
+            log.info("修改头像");
+            user.setFace(imageUrl);
+        }
+        userService.updateById(user);
+
+        // 4. 重新查库，把最新的用户信息封装成 UserVO
+        Users updatedUser = userService.getById(currentUserId);
+        UserVO userVO = new UserVO();
+        BeanUtils.copyProperties(updatedUser, userVO);
+
+        // 5. 🌟 补全注释中的逻辑：把 Token 塞进去，防止前端更新本地缓存时把 Token 弄丢
+        String token = redisTemplate.opsForValue().get("USER_TOKEN:" + currentUserId);
+        userVO.setUserToken(token);
+
+        // 6. 返回给前端！
+        return GraceJSONResult.success(userVO);
+    }
+
+
+
 }
