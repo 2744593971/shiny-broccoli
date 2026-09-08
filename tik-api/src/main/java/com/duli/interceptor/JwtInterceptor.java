@@ -24,6 +24,10 @@ public class JwtInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
 
+        // 🌟 1. 必须放行浏览器的 OPTIONS 预检请求！
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            return true;
+        }
         //  从 HTTP 请求头中获取 Token（前端一般会把 token 放在 header 里传过来）
         // 前端约定的 header 名字叫 "headerUserToken"
         String userToken = request.getHeader("headerUserToken");

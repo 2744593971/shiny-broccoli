@@ -23,8 +23,8 @@ public class RegistLoginBO {
     private String mobile;
 
     @NotBlank(message = "验证码不能为空")
-    @ApiModelProperty(value = "验证码", name = "verifyCode", example = "123456", required = true)
-    private String verifyCode;
+    @ApiModelProperty(value = "验证码", name = "smsCode", example = "123456", required = true)
+    private String smsCode;
     
     // 如果以后前端登录时需要传手机设备号等，直接在这里加字段即可，不需要改 Controller 方法签名
     // private String deviceId;

@@ -53,7 +53,6 @@ public class PassportController {
         }
 
 
-
         // --- MyBatis-Plus 特色：使用 LambdaQueryWrapper 查询 ---
         // 相当于执行了：SELECT * FROM users WHERE mobile = ? LIMIT 1
         LambdaQueryWrapper<Users> queryWrapper = new LambdaQueryWrapper<>();
@@ -74,14 +73,14 @@ public class PassportController {
         }
 
         // 生成6位随机验证码
-        String code = String.valueOf((int)((Math.random() * 9 + 1) * 100000));
+        String code = String.valueOf((int) ((Math.random() * 9 + 1) * 100000));
 
         try {
             // 发送邮件
             mailService.sendVerificationCode(email, code);
 
             //  把验证码存入 Redis，设置 5 分钟过期
-             redisTemplate.opsForValue().set("MOBILE_CODE:" + mobile, code, 5, TimeUnit.MINUTES);
+            redisTemplate.opsForValue().set("MOBILE_CODE:" + mobile, code, 5, TimeUnit.MINUTES);
             log.info("验证码已成功存入 Redis。手机号: {}, 验证码: {}", mobile, code);
             //获取ip，用ip限制60s
             String userIp = IPUtil.getRequestIp(request);
@@ -103,9 +102,9 @@ public class PassportController {
     @PostMapping("/login")
     public GraceJSONResult login(@Valid @RequestBody RegistLoginBO registLoginBO,
                                  HttpServletRequest request) {
-
+        log.info("正在登录------");
         String mobile = registLoginBO.getMobile();
-        String verifyCode = registLoginBO.getVerifyCode();
+        String verifyCode = registLoginBO.getSmsCode();
 
         // 1. 从 Redis 中获取刚刚发给用户的验证码
         String redisKey = "MOBILE_CODE:" + mobile;
@@ -147,6 +146,7 @@ public class PassportController {
         userVO.setUserToken(token);
         return GraceJSONResult.success(userVO);
     }
+
     //永远不要相信前端传来的用户 ID，直接从拦截器验证过的 Token 里拿！
     //!!!!!!!!!!!!!!
     //这个登出拿到的userid是从请求头上面拿到的，这样更安全不会被被人仅仅拿个userid就踢了
@@ -166,7 +166,7 @@ public class PassportController {
      */
     @PostMapping("/logout")
     public GraceJSONResult logout(HttpServletRequest request) {
-
+             log.info("退出-------");
         // 1. 直接从 request 里取出拦截器放行时塞进去的安全、真实的 userId
         //最安全的取userid的方法以免别人用测试工具就能进入
         //⭐越权查看他人隐私数据：是指的是一个人自己登录成功之后用自己的token和别人的id去看别人信息

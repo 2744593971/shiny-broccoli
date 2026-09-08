@@ -6,6 +6,7 @@ import com.duli.service.IUsersService;
 import com.duli.vo.UserVO;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,12 +15,15 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
+
 import com.duli.bo.UpdatedUserBO;
 import com.duli.grace.result.GraceJSONResult;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+
 import javax.validation.Valid;
 
+@Slf4j
 @Api(tags = "UserInfoController 用户信息与统计模块")
 @RequestMapping("/userInfo")
 @RestController
@@ -29,9 +33,9 @@ public class UserInfoController extends com.duli.config.BaseInfoProperties { // 
     private IUsersService userService;
 
     @ApiOperation(value = "获取当前用户的个人主页信息及统计数据")
-    @GetMapping("query")
+    @GetMapping("/query")
     public GraceJSONResult query(HttpServletRequest request) throws Exception {
-
+        log.info("获取当前用户的个人主页信息");
         // 1. 安全核心：从拦截器塞进来的 Token 关联获取当前真实用户 ID（彻底杜绝越权漏洞）
         String currentUserId = (String) request.getAttribute("currentUserId");
         if (StringUtils.isBlank(currentUserId)) {
@@ -73,19 +77,48 @@ public class UserInfoController extends com.duli.config.BaseInfoProperties { // 
     public GraceJSONResult modifyUserInfo(@RequestBody @Valid UpdatedUserBO updatedUserBO,
                                           HttpServletRequest request) {
         //@Valid 就是一个“开关”，用来激活BO里写的那些校验规则：控制是否真的不为空等
-        // 1. 安全核心：从 request 中拿当前真正登录的用户 ID
+//        // 1. 安全核心：从 request 中拿当前真正登录的用户 ID
+//        String currentUserId = (String) request.getAttribute("currentUserId");
+//        if (StringUtils.isBlank(currentUserId)) {
+//            return GraceJSONResult.errorMsg("当前未登录");
+//        }
+//
+//        // 2. 绝对防越权：不管前端有没有传 id，强行覆盖为当前登录用户的 id！
+//        updatedUserBO.setId(currentUserId);
+//
+//        // 3. 调用 Service 执行修改
+//        Users updatedUser = userService.updateUserInfo(updatedUserBO);
+//
+//        // 4. 返回成功，已采用 success
+//        return GraceJSONResult.success(updatedUser);
+        // 1. 🌟 安全第一：绝对不信任前端传的 ID，直接从拦截器塞进来的 Token 里取真实 ID！
         String currentUserId = (String) request.getAttribute("currentUserId");
         if (StringUtils.isBlank(currentUserId)) {
             return GraceJSONResult.errorMsg("当前未登录");
         }
 
-        // 2. 绝对防越权：不管前端有没有传 id，强行覆盖为当前登录用户的 id！
+        // 2. 🌟 强制把真实 ID 塞给 BO（覆盖掉前端可能瞎传的 ID）
         updatedUserBO.setId(currentUserId);
 
-        // 3. 调用 Service 执行修改
-        Users updatedUser = userService.updateUserInfo(updatedUserBO);
+        // 3. 把 BO 拷给 PO (实体类)
+        // 配合 MyBatis-Plus，实体类中为 null 的字段不会去更新数据库
+        Users user = new Users();
+        BeanUtils.copyProperties(updatedUserBO, user);
 
-        // 4. 返回成功，已采用 success
-        return GraceJSONResult.success(updatedUser);
+        // 4. 去数据库执行更新
+        userService.updateById(user);
+
+        // 5. 重新查询数据库，获取修改后的最新用户信息
+        Users updatedUser = userService.getById(currentUserId);
+
+        // 6. 封装前端需要的 UserVO
+        UserVO userVO = new UserVO();
+        BeanUtils.copyProperties(updatedUser, userVO);
+
+        // 🌟 关键一步：从 Redis 中取回当前 Token 并塞进 VO，防止前端覆盖缓存时导致 Token 丢失
+        String token = redisTemplate.opsForValue().get("USER_TOKEN:" + currentUserId);
+        userVO.setUserToken(token);
+
+        return GraceJSONResult.success(userVO);
     }
 }

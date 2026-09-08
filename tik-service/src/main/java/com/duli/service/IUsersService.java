@@ -18,5 +18,5 @@ public interface IUsersService extends IService<Users> {
      */
     Users createUser(String mobile);
 
-    Users updateUserInfo(UpdatedUserBO updatedUserBO);
+    //Users updateUserInfo(UpdatedUserBO updatedUserBO);
 }
