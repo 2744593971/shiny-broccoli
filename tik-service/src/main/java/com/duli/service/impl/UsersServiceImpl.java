@@ -1,5 +1,6 @@
 package com.duli.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.duli.bo.UpdatedUserBO;
 import com.duli.mapper.UsersMapper;
@@ -12,7 +13,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-import org.springframework.beans.BeanUtils;
+
 
 @Service
 public class UsersServiceImpl extends ServiceImpl<UsersMapper, Users> implements IUsersService {
@@ -62,21 +63,6 @@ public class UsersServiceImpl extends ServiceImpl<UsersMapper, Users> implements
         return user;
     }
 
-//    @Transactional(rollbackFor = Exception.class)
-//    @Override
-//    public Users updateUserInfo(UpdatedUserBO updatedUserBO) {
-//
-//        // 1. 将 BO 转换为实体类 Users
-//        Users user = new Users();
-//        BeanUtils.copyProperties(updatedUserBO, user);
-//
-//        // 2. 这里的核心是 MyBatis-Plus 的 updateById。
-//        // 因为在 Controller 里已经把 id 强制设为 currentUserId，
-//        // 所以这里绝对只会更新当前用户的资料，并且只更新 BO 里有值的字段。
-//        this.updateById(user);
-//
-//        // 3. 很多时候修改完信息，前端需要最新的数据来刷新页面，
-//        // 所以我们用刚才的 ID 把最新的完整用户信息查出来返回。
-//        return this.getById(user.getId());
-//    }
+
+
 }

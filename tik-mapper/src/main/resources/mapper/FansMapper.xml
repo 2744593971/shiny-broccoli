@@ -1,5 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.duli.mapper.mapper.FansMapper">
+<mapper namespace="com.duli.mapper.FansMapper">
+    <!-- 查询我的关注列表 (我是粉丝，查博主信息) -->
+    <select id="queryMyFollows" resultType="com.duli.vo.VlogerVO">
+        SELECT
+        f.vloger_id as vlogerId,
+        u.nickname as nickname,
+        u.face as face,
+        1 as isFollowed <!-- 1 映射给 boolean 就是 true -->
+        FROM fans f
+        LEFT JOIN users u ON f.vloger_id = u.id
+        WHERE f.fan_id = #{myId}
+        ORDER BY f.id DESC
+    </select>
 
+    <!-- 查询我的粉丝列表 (我是博主，查粉丝信息) -->
+    <select id="queryMyFans" resultType="com.duli.vo.FansVO">
+        SELECT
+            f.fan_id as fanId,
+            u.nickname as nickname,
+            u.face as face,
+            f.is_fan_friend_of_mine as isFriend
+        FROM fans f
+                 LEFT JOIN users u ON f.fan_id = u.id
+        WHERE f.vloger_id = #{myId}
+        ORDER BY f.id DESC
+    </select>
 </mapper>

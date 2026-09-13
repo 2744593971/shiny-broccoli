@@ -1,7 +1,6 @@
 package com.duli.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
-import com.duli.bo.UpdatedUserBO;
 import com.duli.pojo.Users;
 
 /**
@@ -18,5 +17,4 @@ public interface IUsersService extends IService<Users> {
      */
     Users createUser(String mobile);
 
-    //Users updateUserInfo(UpdatedUserBO updatedUserBO);
 }

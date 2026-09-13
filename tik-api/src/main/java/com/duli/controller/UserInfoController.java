@@ -1,6 +1,9 @@
 package com.duli.controller;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.duli.grace.result.GraceJSONResult;
+import com.duli.mapper.FansMapper;
+import com.duli.pojo.Fans;
 import com.duli.pojo.Users;
 import com.duli.service.IUsersService;
 import com.duli.service.impl.AliyunOSSService;
@@ -29,42 +32,123 @@ public class UserInfoController extends com.duli.config.BaseInfoProperties { // 
 
     @Autowired
     private IUsersService userService;
+    @Autowired
+    private FansMapper fansMapper;
 
-    @ApiOperation(value = "获取当前用户的个人主页信息及统计数据")
-    @GetMapping("/query")
-    public GraceJSONResult query(HttpServletRequest request) throws Exception {
-        log.info("获取当前用户的个人主页信息");
-        // 1. 安全核心：从拦截器塞进来的 Token 关联获取当前真实用户 ID（彻底杜绝越权漏洞）
-        String currentUserId = (String) request.getAttribute("currentUserId");
-        if (StringUtils.isBlank(currentUserId)) {
-            return GraceJSONResult.errorMsg("当前未登录");
+//    @ApiOperation(value = "获取当前用户的个人主页信息及统计数据")
+//    @GetMapping("/query")
+//    public GraceJSONResult query(HttpServletRequest request) throws Exception {
+//        log.info("获取当前用户的个人主页信息");
+//        // 1. 安全核心：从拦截器塞进来的 Token 关联获取当前真实用户 ID（彻底杜绝越权漏洞）
+//        String currentUserId = (String) request.getAttribute("currentUserId");
+//        if (StringUtils.isBlank(currentUserId)) {
+//            return GraceJSONResult.errorMsg("当前未登录");
+//        }
+//
+//        // 2. 查数据库：获取用户基础信息
+//        Users user = userService.getById(currentUserId);
+//        if (user == null) {
+//            return GraceJSONResult.errorMsg("用户不存在");
+//        }
+//
+//        UserVO userVO = new UserVO();
+//        BeanUtils.copyProperties(user, userVO);
+//
+//        // 3. 查 Redis：直接使用父类继承过来的 redisTemplate 操作高频统计数据
+//        String myFollowsCountsStr = redisTemplate.opsForValue().get(REDIS_MY_FOLLOWS_COUNTS + ":" + currentUserId);
+//        String myFansCountsStr = redisTemplate.opsForValue().get(REDIS_MY_FANS_COUNTS + ":" + currentUserId);
+//        String likedVlogerCountsStr = redisTemplate.opsForValue().get(REDIS_VLOGER_BE_LIKED_COUNTS + ":" + currentUserId);
+//
+//        // 4. 判空与默认值转换处理（防止 Redis 刚开始没数据时拿到 null 报错）
+//        Integer myFollowsCounts = StringUtils.isNotBlank(myFollowsCountsStr) ? Integer.valueOf(myFollowsCountsStr) : 0;
+//        Integer myFansCounts = StringUtils.isNotBlank(myFansCountsStr) ? Integer.valueOf(myFansCountsStr) : 0;
+//        Integer likedVlogerCounts = StringUtils.isNotBlank(likedVlogerCountsStr) ? Integer.valueOf(likedVlogerCountsStr) : 0;
+//
+//        // 5. 将数据组装进 UserVO 返回给前端
+//        userVO.setMyFollowsCounts(myFollowsCounts);
+//        userVO.setMyFansCounts(myFansCounts);
+//        userVO.setTotalLikeMeCounts(likedVlogerCounts);
+//
+//        return GraceJSONResult.success(userVO);
+//    }
+@ApiOperation(value = "获取用户的个人主页信息及统计数据")
+@GetMapping("/query")
+// 🌟 1. 设置 defaultValue = ""，让 userId 变成非必填项
+public GraceJSONResult query(@RequestParam(defaultValue = "") String userId,
+                             HttpServletRequest request) throws Exception {
+    log.info("获取用户的个人主页信息");
+
+    // 🌟 2. 兼容逻辑：如果前端没传 userId，就从拦截器的Token里拿
+    //首先看前端有没有传博主id如果有就查博主的id如果没有就说明是查的自己的 就从token里面获取userid
+    if (StringUtils.isBlank(userId)) {
+        userId = (String) request.getAttribute("currentUserId");
+    }
+
+    // 如果连 Token 里都没有，说明既没传参也没登录
+    if (StringUtils.isBlank(userId)) {
+        return GraceJSONResult.errorMsg("用户身份异常，请重新登录");
+    }
+
+    // 3. 查数据库：获取用户基础信息
+    Users user = userService.getById(userId);
+    if (user == null) {
+        return GraceJSONResult.errorMsg("用户不存在");
+    }
+
+    UserVO userVO = new UserVO();
+    BeanUtils.copyProperties(user, userVO);
+
+    // 4. 使用“缓存旁路模式”获取粉丝数和关注数（Redis + MySQL 兜底）
+    userVO.setMyFansCounts(getFansCount(userId));
+    userVO.setMyFollowsCounts(getFollowsCount(userId));
+
+    // 获赞数暂时还是按老逻辑走 Redis
+    String likedVlogerCountsStr = redisTemplate.opsForValue().get(REDIS_VLOGER_BE_LIKED_COUNTS + ":" + userId);
+    Integer likedVlogerCounts = StringUtils.isNotBlank(likedVlogerCountsStr) ? Integer.valueOf(likedVlogerCountsStr) : 0;
+    userVO.setTotalLikeMeCounts(likedVlogerCounts);
+
+    return GraceJSONResult.success(userVO);
+}
+    /**
+     * 🌟 辅助方法：获取粉丝数 (先查 Redis，没有就查 fans 表并写回 Redis)
+     */
+    private Integer getFansCount(String vlogerId) {
+        // 使用你继承的父类里的 REDIS_MY_FANS_COUNTS 常量
+        String redisKey = REDIS_MY_FANS_COUNTS + ":" + vlogerId;
+        String countStr = redisTemplate.opsForValue().get(redisKey);
+
+        // 如果 Redis 里有数据，直接返回，速度最快！
+        if (StringUtils.isNotBlank(countStr)) {
+            return Integer.parseInt(countStr);
         }
 
-        // 2. 查数据库：获取用户基础信息
-        Users user = userService.getById(currentUserId);
-        if (user == null) {
-            return GraceJSONResult.errorMsg("用户不存在");
+        // 如果 Redis 里没有，去 MySQL 查真实行数
+        QueryWrapper<Fans> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("vloger_id", vlogerId);
+        Integer realCount = Math.toIntExact(fansMapper.selectCount(queryWrapper));
+
+        // 把真实数字塞回 Redis 缓存起来
+        redisTemplate.opsForValue().set(redisKey, String.valueOf(realCount));
+        return realCount;
+    }
+
+    /**
+     * 🌟 辅助方法：获取关注数 (同理)
+     */
+    private Integer getFollowsCount(String myId) {
+        String redisKey = REDIS_MY_FOLLOWS_COUNTS + ":" + myId;
+        String countStr = redisTemplate.opsForValue().get(redisKey);
+
+        if (StringUtils.isNotBlank(countStr)) {
+            return Integer.parseInt(countStr);
         }
 
-        UserVO userVO = new UserVO();
-        BeanUtils.copyProperties(user, userVO);
+        QueryWrapper<Fans> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("fan_id", myId);
+        Integer realCount = Math.toIntExact(fansMapper.selectCount(queryWrapper));
 
-        // 3. 查 Redis：直接使用父类继承过来的 redisTemplate 操作高频统计数据
-        String myFollowsCountsStr = redisTemplate.opsForValue().get(REDIS_MY_FOLLOWS_COUNTS + ":" + currentUserId);
-        String myFansCountsStr = redisTemplate.opsForValue().get(REDIS_MY_FANS_COUNTS + ":" + currentUserId);
-        String likedVlogerCountsStr = redisTemplate.opsForValue().get(REDIS_VLOGER_BE_LIKED_COUNTS + ":" + currentUserId);
-
-        // 4. 判空与默认值转换处理（防止 Redis 刚开始没数据时拿到 null 报错）
-        Integer myFollowsCounts = StringUtils.isNotBlank(myFollowsCountsStr) ? Integer.valueOf(myFollowsCountsStr) : 0;
-        Integer myFansCounts = StringUtils.isNotBlank(myFansCountsStr) ? Integer.valueOf(myFansCountsStr) : 0;
-        Integer likedVlogerCounts = StringUtils.isNotBlank(likedVlogerCountsStr) ? Integer.valueOf(likedVlogerCountsStr) : 0;
-
-        // 5. 将数据组装进 UserVO 返回给前端
-        userVO.setMyFollowsCounts(myFollowsCounts);
-        userVO.setMyFansCounts(myFansCounts);
-        userVO.setTotalLikeMeCounts(likedVlogerCounts);
-
-        return GraceJSONResult.success(userVO);
+        redisTemplate.opsForValue().set(redisKey, String.valueOf(realCount));
+        return realCount;
     }
 
 
@@ -123,7 +207,9 @@ public class UserInfoController extends com.duli.config.BaseInfoProperties { // 
         }
 
         // 2. 核心调用：一行代码拿到外网可以访问的阿里云图片链接！
-        String imageUrl = aliyunOSSService.uploadFile(file, currentUserId);
+        // ✅ 正确：根据 type 区分文件夹（type=1 是背景放 bg，type=2 是头像放 face）
+        String folder = (type == 1) ? "bg" : "face";
+        String imageUrl = aliyunOSSService.uploadFile(file, currentUserId, folder);
 
         // 3. 更新数据库
         Users user = new Users();

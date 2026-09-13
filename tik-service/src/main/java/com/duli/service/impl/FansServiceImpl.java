@@ -1,22 +1,133 @@
 package com.duli.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.duli.mapper.FansMapper;
 import com.duli.pojo.Fans;
 import com.duli.service.IFansService;
+import com.duli.vo.FansVO;
+import com.duli.vo.VlogerVO;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import com.github.pagehelper.PageHelper;
+import com.github.pagehelper.PageInfo;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.List;
 
-/**
- * <p>
- * 粉丝表
 
- 服务实现类
- * </p>
- *
- * @author author
- * @since 2026-09-05
- */
 @Service
 public class FansServiceImpl extends ServiceImpl<FansMapper, Fans> implements IFansService {
 
+    @Autowired
+    private StringRedisTemplate redisTemplate;
+    @Autowired
+    private FansMapper fansMapper;
+    @Override
+    public boolean queryDoIFollowVloger(String myId, String vlogerId) {
+        Fans fan = getSingleFan(myId, vlogerId);
+        return fan != null;
+    }
+
+    @Transactional
+    @Override
+    public void doFollow(String myId, String vlogerId) {
+        // 1. 先判断对方是否已经关注了我 (查 fans 表: 博主是 myId, 粉丝是 vlogerId)
+        QueryWrapper<Fans> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("vloger_id", myId).eq("fan_id", vlogerId);
+        Fans vlogerFollowMeRecord = fansMapper.selectOne(queryWrapper);
+
+        // 2. 构造我关注对方的记录
+        Fans fans = new Fans();
+        fans.setFanId(myId);
+        fans.setVlogerId(vlogerId);
+
+        if (vlogerFollowMeRecord != null) {
+            // 🌟 对方已经关注了我，说明这是“双向奔赴”
+            // 2.1 将我关注对方的记录标记为互粉 (1)
+            fans.setIsFanFriendOfMine(1);
+
+            // 2.2 把对方关注我的记录也更新为互粉 (1)
+            vlogerFollowMeRecord.setIsFanFriendOfMine(1);
+            fansMapper.updateById(vlogerFollowMeRecord);
+        } else {
+            // 对方没关注我，说明只是我单方面关注
+            fans.setIsFanFriendOfMine(0);
+        }
+
+        // 3. 把我的关注记录插入数据库
+        fansMapper.insert(fans);
+
+        // 4. Redis 缓存累加逻辑 (使用我们之前定好的字符串)
+        redisTemplate.opsForValue().increment("redis_my_follows_counts:" + myId, 1);
+        redisTemplate.opsForValue().increment("redis_my_fans_counts:" + vlogerId, 1);
+    }
+
+    @Transactional
+    @Override
+    public void doCancel(String myId, String vlogerId) {
+        // 1. 删除我关注对方的记录
+        QueryWrapper<Fans> deleteWrapper = new QueryWrapper<>();
+        deleteWrapper.eq("vloger_id", vlogerId).eq("fan_id", myId);
+        fansMapper.delete(deleteWrapper);
+
+        // 2. 判断对方是否还关注着我
+        QueryWrapper<Fans> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("vloger_id", myId).eq("fan_id", vlogerId);
+        Fans vlogerFollowMeRecord = fansMapper.selectOne(queryWrapper);
+
+        if (vlogerFollowMeRecord != null) {
+            // 🌟 对方还在关注我，但是我已经取关了，所以要打破互粉状态
+            vlogerFollowMeRecord.setIsFanFriendOfMine(0);
+            fansMapper.updateById(vlogerFollowMeRecord);
+        }
+
+        // 3. Redis 缓存递减逻辑
+        redisTemplate.opsForValue().decrement("redis_my_follows_counts:" + myId, 1);
+        redisTemplate.opsForValue().decrement("redis_my_fans_counts:" + vlogerId, 1);
+        
+    }
+
+    /**
+     * 辅助方法：抽取公共的查询逻辑
+     * @param fanId 粉丝ID
+     * @param vlogerId 博主ID
+     * @return 返回单条关注记录
+     */
+    private Fans getSingleFan(String fanId, String vlogerId) {
+        QueryWrapper<Fans> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("fan_id", fanId)
+                    .eq("vloger_id", vlogerId);
+        return this.getOne(queryWrapper);
+    }
+
+    @Override
+    public Map<String, Object> queryMyFollows(String myId, Integer page, Integer pageSize) {
+        // 1. 开启分页拦截
+        PageHelper.startPage(page, pageSize);
+        // 2. 执行连表查询
+        List<VlogerVO> list = baseMapper.queryMyFollows(myId);
+        // 3. 获取分页数据
+        PageInfo<?> pageList = new PageInfo<>(list);
+
+        // 4. 封装成前端能够直接解析的 rows 和 total 结构
+        Map<String, Object> map = new HashMap<>();
+        map.put("rows", list);
+        map.put("total", pageList.getPages()); // 返回总页数
+        return map;
+    }
+
+    @Override
+    public Map<String, Object> queryMyFans(String myId, Integer page, Integer pageSize) {
+        PageHelper.startPage(page, pageSize);
+        List<FansVO> list = baseMapper.queryMyFans(myId);
+        PageInfo<?> pageList = new PageInfo<>(list);
+
+        Map<String, Object> map = new HashMap<>();
+        map.put("rows", list);
+        map.put("total", pageList.getPages());
+        return map;
+    }
 }

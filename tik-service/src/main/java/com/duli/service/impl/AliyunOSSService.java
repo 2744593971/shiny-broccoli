@@ -20,13 +20,28 @@ public class AliyunOSSService {
     @Value("${aliyun.oss.bucketName}")
     private String bucketName;
 
-    public String uploadFile(MultipartFile file, String userId) throws Exception {
-        // 1. 获取原文件名并提取后缀 (例如 .jpg)
+    // 增加了一个 folderName 参数，用来区分是传头像还是传视频
+    public String uploadFile(MultipartFile file, String userId, String folderName) throws Exception {
+        // 1. 获取原文件名并提取后缀 (例如 .jpg 或 .mp4)
+        // 1. 获取原文件名并提取后缀 (加入安全校验，防止没有点导致 -1 越界)
+        // 1. 获取原文件名
         String originalFilename = file.getOriginalFilename();
-        String suffix = originalFilename.substring(originalFilename.lastIndexOf("."));
+        String suffix = "";
 
-        // 2. 构造防重名的云端文件名 (按 userId 分文件夹存放)
-        String newFileName = "face/" + userId + "/" + UUID.randomUUID().toString() + suffix;
+        // 2. 智能提取或兜底后缀
+        if (originalFilename != null && originalFilename.contains(".")) {
+            suffix = originalFilename.substring(originalFilename.lastIndexOf("."));
+        } else {
+            // ⚠️ 兼容 uni-app 传上来的临时文件没有后缀的情况
+            if ("videos".equals(folderName)) {
+                suffix = ".mp4";  // 如果是视频目录，默认给 .mp4
+            } else {
+                suffix = ".jpg";  // 如果是头像/背景目录，默认给 .jpg
+            }
+        }
+
+        // 2. 动态拼接云端文件名 (按 业务文件夹/userId 存放，例如 videos/123/xxx.mp4)
+        String newFileName = folderName + "/" + userId + "/" + UUID.randomUUID().toString() + suffix;
 
         // 3. 创建 OSSClient 实例
         OSS ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
@@ -36,8 +51,7 @@ public class AliyunOSSService {
             InputStream inputStream = file.getInputStream();
             ossClient.putObject(bucketName, newFileName, inputStream);
 
-            // 5. 拼装可以在外网访问的图片 URL
-            // 格式通常是: https://[bucketName].[endpoint]/[newFileName]
+            // 5. 拼装可以在外网访问的图片/视频 URL
             String cleanEndpoint = endpoint.replace("https://", "").replace("http://", "");
             return "https://" + bucketName + "." + cleanEndpoint + "/" + newFileName;
         } finally {

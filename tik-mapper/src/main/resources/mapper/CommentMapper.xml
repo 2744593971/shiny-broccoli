@@ -1,5 +1,31 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.duli.mapper.mapper.CommentMapper">
+<mapper namespace="com.duli.mapper.CommentMapper">
+    <select id="getCommentList" resultType="com.duli.vo.CommentVO">
+        SELECT
+            c.id as commentId,
+            c.vloger_id as vlogerId,
+            c.father_comment_id as fatherCommentId,
+            c.vlog_id as vlogId,
+            c.comment_user_id as commentUserId,
+            c.content as content,
+            c.like_counts as likeCounts,
+            c.create_time as createTime,
+            u.nickname as commentUserNickname,
+            u.face as commentUserFace,
+            fu.nickname as replyedUserNickname
+        FROM
+            comment c
+                LEFT JOIN
+            users u ON c.comment_user_id = u.id
+                LEFT JOIN
+            comment fc ON c.father_comment_id = fc.id
+                LEFT JOIN
+            users fu ON fc.comment_user_id = fu.id
+        WHERE
+            c.vlog_id = #{vlogId}
+        ORDER BY
+            c.create_time DESC
+    </select>
 
 </mapper>

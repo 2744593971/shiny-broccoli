@@ -1,5 +1,253 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.duli.mapper.mapper.VlogMapper">
+<mapper namespace="com.duli.mapper.VlogMapper">
 
+<!--    <select id="getIndexVlogListByCursor" resultType="com.duli.vo.IndexVlogVO">-->
+<!--        SELECT-->
+<!--        v.id as vlogId,-->
+<!--        v.vloger_id as vlogerId,-->
+<!--        v.url as url,-->
+<!--        v.cover as cover,-->
+<!--        v.title as content,-->
+<!--        v.width as width,-->
+<!--        v.height as height,-->
+<!--        v.like_counts as likeCounts,-->
+<!--        v.comments_counts as commentsCounts,-->
+<!--        v.is_private as isPrivate,-->
+<!--        v.created_time as createdTime, &lt;!&ndash; 🌟 必须查出这个字段，Service 层要用它算游标 &ndash;&gt;-->
+<!--        u.face as vlogerFace,-->
+<!--        u.nickname as vlogerName,-->
+
+<!--        (-->
+<!--        CASE WHEN (-->
+<!--        SELECT COUNT(1) FROM my_liked_vlog m-->
+<!--        WHERE m.vlog_id = v.id AND m.user_id = #{paramMap.userId}-->
+<!--        ) > 0 THEN 1 ELSE 0 END-->
+<!--        ) as doILikeThisVlog,-->
+
+<!--        (-->
+<!--        CASE WHEN (-->
+<!--        SELECT COUNT(1) FROM fans f-->
+<!--        WHERE f.fan_id = #{paramMap.userId} AND f.vloger_id = v.vloger_id-->
+<!--        ) > 0 THEN 1 ELSE 0 END-->
+<!--        ) as doIFollowVloger-->
+
+<!--        FROM-->
+<!--        vlog v-->
+<!--        LEFT JOIN-->
+<!--        users u ON v.vloger_id = u.id-->
+<!--        WHERE-->
+<!--        v.is_private = 0-->
+<!--        &lt;!&ndash; 🌟 核心过滤：时间必须早于传过来的游标 &ndash;&gt;-->
+<!--        AND v.created_time &lt; #{paramMap.cursorTime}-->
+<!--        <if test="paramMap.search != null and paramMap.search != ''">-->
+<!--            AND v.title like CONCAT('%', #{paramMap.search}, '%')-->
+<!--        </if>-->
+<!--        ORDER BY-->
+<!--        v.created_time DESC-->
+<!--        &lt;!&ndash; 🌟 手动限制条数 &ndash;&gt;-->
+<!--        LIMIT #{paramMap.pageSize}-->
+<!--    </select>-->
+    <!-- 查询首页列表，支持搜索匹配 -->
+    <select id="getIndexVlogList" resultType="com.duli.vo.IndexVlogVO">
+        SELECT
+        v.id as vlogId,
+        v.vloger_id as vlogerId,
+        v.url as url,
+        v.cover as cover,
+        v.title as content,
+        v.width as width,
+        v.height as height,
+        v.like_counts as likeCounts,
+        v.comments_counts as commentsCounts,
+        v.is_private as isPrivate,
+        u.face as vlogerFace,
+        u.nickname as vlogerName,
+
+        <!-- 🌟 补齐子查询：判断当前用户是否点赞 -->
+        (
+        CASE WHEN (
+        SELECT COUNT(1) FROM my_liked_vlog m
+        WHERE m.vlog_id = v.id AND m.user_id = #{paramMap.userId}
+        ) > 0 THEN 1 ELSE 0 END
+        ) as doILikeThisVlog,
+
+        <!-- 🌟 补齐子查询：判断当前用户是否关注该博主 -->
+        (
+        CASE WHEN (
+        SELECT COUNT(1) FROM fans f
+        WHERE f.fan_id = #{paramMap.userId} AND f.vloger_id = v.vloger_id
+        ) > 0 THEN 1 ELSE 0 END
+        ) as doIFollowVloger
+
+        FROM
+        vlog v
+        LEFT JOIN
+        users u ON v.vloger_id = u.id
+        WHERE
+        v.is_private = 0
+
+        <if test="paramMap.search != null and paramMap.search != ''">
+            AND v.title like CONCAT('%', #{paramMap.search}, '%')
+        </if>
+        ORDER BY
+        v.created_time DESC
+    </select>
+
+
+
+    <!-- 🌟🌟🌟 修改：查询公开/私密作品 (加入详细信息和状态判断) -->
+    <select id="getMyVlogList" resultType="com.duli.vo.IndexVlogVO">
+        SELECT
+            v.id as id,
+            v.id as vlogId,
+            v.vloger_id as vlogerId,
+            u.nickname as vlogerName,
+            u.face as vlogerFace,
+            v.title as content,
+            v.cover as cover,
+            v.url as url,
+            v.width as width,
+            v.height as height,
+            v.like_counts as likeCounts,
+            v.comments_counts as commentsCounts,
+            v.is_private as isPrivate,
+
+            -- 🌟 子查询：判断当前用户是否点赞了这个视频
+            (SELECT count(1) FROM my_liked_vlog m WHERE m.vlog_id = v.id AND m.user_id = #{currentUserId}) as doILikeThisVlog,
+
+            -- 🌟 子查询：判断当前用户是否关注了这个博主
+            (SELECT count(1) FROM fans f WHERE f.fan_id = #{currentUserId} AND f.vloger_id = v.vloger_id) as doIFollowVloger
+
+        FROM
+            vlog v
+                LEFT JOIN
+            users u ON v.vloger_id = u.id
+        WHERE
+            v.vloger_id = #{vlogerId}
+          AND v.is_private = #{isPrivate}
+        ORDER BY
+            v.created_time DESC
+    </select>
+
+    <!-- 查询我赞过的视频 (保持不变) -->
+    <select id="getMyLikedList" resultType="com.duli.vo.IndexVlogVO">
+        SELECT
+            v.id as id,
+            v.id as vlogId,
+            v.cover as cover,
+            v.url as url
+        FROM
+            vlog v
+                LEFT JOIN
+            my_liked_vlog m ON v.id = m.vlog_id
+        WHERE
+            m.user_id = #{userId}
+        ORDER BY
+            v.created_time DESC
+    </select>
+
+    <!-- 查询视频详情 (保持不变) -->
+    <select id="getVlogDetailById" resultType="com.duli.vo.IndexVlogVO">
+        SELECT
+            v.id as vlogId,
+            v.vloger_id as vlogerId,
+            u.nickname as vlogerName,
+            u.face as vlogerFace,
+            v.title as content,
+            v.cover as cover,
+            v.url as url,
+            v.is_private as isPrivate,
+            v.like_counts as likeCounts,
+            v.comments_counts as commentsCounts,
+            (SELECT count(1) FROM my_liked_vlog m WHERE m.vlog_id = v.id AND m.user_id = #{userId}) as doILikeThisVlog,
+            (SELECT count(1) FROM fans f WHERE f.fan_id = #{userId} AND f.vloger_id = v.vloger_id) as doIFollowVloger
+        FROM
+            vlog v
+                LEFT JOIN
+            users u ON v.vloger_id = u.id
+        WHERE
+            v.id = #{vlogId}
+    </select>
+
+    <select id="getMyFollowVlogList" resultType="com.duli.vo.IndexVlogVO">
+        SELECT
+        v.id as vlogId,
+        v.vloger_id as vlogerId,
+        v.url as url,
+        v.cover as cover,
+        v.title as content,
+        v.width as width,
+        v.height as height,
+        v.like_counts as likeCounts,
+        v.comments_counts as commentsCounts,
+        v.is_private as isPrivate,
+        u.face as vlogerFace,
+        u.nickname as vlogerName,
+
+        <!-- 🌟 子查询：判断当前用户是否点赞了这个视频 -->
+        (
+        CASE WHEN (
+        SELECT COUNT(1) FROM my_liked_vlog m
+        WHERE m.vlog_id = v.id AND m.user_id = #{myId}
+        ) > 0 THEN 1 ELSE 0 END
+        ) as doILikeThisVlog,
+
+        <!-- 🌟 神级优化：既然在这个列表里，必定是已关注，直接返回 1 -->
+        1 as doIFollowVloger
+
+        FROM
+        vlog v
+        LEFT JOIN
+        users u ON v.vloger_id = u.id
+        WHERE
+        v.is_private = 0
+        <!-- 🌟 核心过滤：博主 ID 必须在我关注的列表里 -->
+        AND v.vloger_id IN (
+        SELECT vloger_id FROM fans WHERE fan_id = #{myId}
+        )
+        ORDER BY
+        v.created_time DESC
+    </select>
+
+    <select id="getMyFriendVlogList" resultType="com.duli.vo.IndexVlogVO">
+        SELECT
+        v.id as vlogId,
+        v.vloger_id as vlogerId,
+        v.url as url,
+        v.cover as cover,
+        v.title as content,
+        v.width as width,
+        v.height as height,
+        v.like_counts as likeCounts,
+        v.comments_counts as commentsCounts,
+        v.is_private as isPrivate,
+        u.face as vlogerFace,
+        u.nickname as vlogerName,
+
+        (
+        CASE WHEN (
+        SELECT COUNT(1) FROM my_liked_vlog m
+        WHERE m.vlog_id = v.id AND m.user_id = #{myId}
+        ) > 0 THEN 1 ELSE 0 END
+        ) as doILikeThisVlog,
+
+        <!-- 已经是朋友了，必然关注，直接写死返回 1 -->
+        1 as doIFollowVloger
+
+        FROM
+        vlog v
+        LEFT JOIN
+        users u ON v.vloger_id = u.id
+        WHERE
+        v.is_private = 0
+        <!-- 🌟 核心过滤：互粉逻辑。利用 INNER JOIN 找出双向关注的人 -->
+        AND v.vloger_id IN (
+        SELECT f1.vloger_id FROM fans f1
+        INNER JOIN fans f2 ON f1.vloger_id = f2.fan_id AND f1.fan_id = f2.vloger_id
+        WHERE f1.fan_id = #{myId}
+        )
+        ORDER BY
+        v.created_time DESC
+    </select>
 </mapper>
