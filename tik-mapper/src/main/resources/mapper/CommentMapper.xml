@@ -25,6 +25,7 @@
         WHERE
             c.vlog_id = #{vlogId}
         ORDER BY
+            c.like_counts DESC,
             c.create_time DESC
     </select>
 

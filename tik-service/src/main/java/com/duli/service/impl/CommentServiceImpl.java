@@ -33,8 +33,12 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
     @Autowired
     private VlogMapper vlogMapper;
 
-    // 定义 Redis Key 的前缀
+    // 定义 Redis Key 的前缀：记录视频评论总数
     public static final String REDIS_VLOG_COMMENT_COUNTS = "redis_vlog_comment_counts";
+    // 🌟 记录用户点赞过的评论
+    public static final String REDIS_USER_LIKE_COMMENT = "redis_user_like_comment";
+    // 🌟 记录每条评论的总点赞数 (String)
+    public static final String REDIS_COMMENT_LIKE_COUNTS = "redis_comment_like_counts";
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -80,7 +84,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
             redisTemplate.opsForValue().decrement("redis_vlog_comment_counts:" + vlogId, 1);
 
             // 数据库 vlog 表的 comments_counts 字段 -1
-            com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<com.duli.pojo.Vlog> vlogUpdateWrapper = new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<>();
+            UpdateWrapper<Vlog> vlogUpdateWrapper = new UpdateWrapper<>();
             vlogUpdateWrapper.eq("id", vlogId)
                     .setSql("comments_counts = comments_counts - 1");
             vlogMapper.update(null, vlogUpdateWrapper);
@@ -90,35 +94,74 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
     @Override
     public Page<CommentVO> queryVlogComments(String vlogId, String userId, Integer page, Integer pageSize) {
         Page<CommentVO> pageable = new Page<>(page, pageSize);
+        // 从 MySQL 查出基础数据，此时 vo.getLikeCounts() 是滞后的
         Page<CommentVO> result = commentMapper.getCommentList(pageable, vlogId);
-        
-        // 此处遍历 result.getRecords() 
-        // 配合 Redis 或点赞表，判断当前 userId 是否点赞了该评论，将其 isLike 设为 1 或 0
+
         for (CommentVO vo : result.getRecords()) {
-            vo.setIsLike(0); // 暂默认未点赞，如有 redis 请在此处注入逻辑判断
+            String commentId = vo.getCommentId();
+
+            // 🌟 1. 从 Redis 获取该评论的最新的总点赞数，覆盖 MySQL 里的旧数据
+            String likeCountsStr = redisTemplate.opsForValue().get(REDIS_COMMENT_LIKE_COUNTS + ":" + commentId);
+            if (org.apache.commons.lang3.StringUtils.isNotBlank(likeCountsStr)) {
+                vo.setLikeCounts(Integer.valueOf(likeCountsStr));
+            }
+
+            // 2. 判断当前 userId 是否点赞了该评论
+            vo.setIsLike(0);
+            if (org.apache.commons.lang3.StringUtils.isNotBlank(userId)) {
+                Boolean isMember = redisTemplate.opsForSet().isMember(REDIS_USER_LIKE_COMMENT + ":" + userId, commentId);
+                if (isMember != null && isMember) {
+                    vo.setIsLike(1);
+                }
+            }
         }
+
         return result;
     }
 
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void likeComment(String userId, String commentId) {
-        // 1. 数据库评论点赞数 +1
-        Comment comment = commentMapper.selectById(commentId);
-        comment.setLikeCounts(comment.getLikeCounts() + 1);
-        commentMapper.updateById(comment);
-        // 2. TODO: 可以在 Redis 记录用户点赞状态
-    }
+//    @Override
+//    @Transactional(rollbackFor = Exception.class)
+//    public void likeComment(String userId, String commentId) {
+//        // 1. 数据库评论点赞数 +1
+//        Comment comment = commentMapper.selectById(commentId);
+//        comment.setLikeCounts(comment.getLikeCounts() + 1);
+//        commentMapper.updateById(comment);
+//        // 🌟 2. 在 Redis 中记录用户点赞状态：把 commentId 存入该用户的 点赞评论Set 集合中
+//        redisTemplate.opsForSet().add(REDIS_USER_LIKE_COMMENT + ":" + userId, commentId);
+//        //在redis的这个集合里value就是一堆存放着 commentId的集合（一堆无序且不重复的字符串）。
+//    }
+
+//    @Override
+//    @Transactional(rollbackFor = Exception.class)
+//    public void unlikeComment(String userId, String commentId) {
+//        // 1. 数据库评论点赞数 -1
+//        Comment comment = commentMapper.selectById(commentId);
+//        if(comment.getLikeCounts() > 0) {
+//            comment.setLikeCounts(comment.getLikeCounts() - 1);
+//            commentMapper.updateById(comment);
+//        }
+//        // 2.在 Redis 移除用户点赞状态
+//        redisTemplate.opsForSet().remove(REDIS_USER_LIKE_COMMENT + ":" + userId, commentId);
+//    }
+    //⭐改造点赞和取消功能： 用redis存+mysql洗数据方式
+@Override
+@Transactional(rollbackFor = Exception.class)
+public void likeComment(String userId, String commentId) {
+    // 1. 在 Redis 中记录用户点赞状态 (存入 Set)
+    redisTemplate.opsForSet().add(REDIS_USER_LIKE_COMMENT + ":" + userId, commentId);
+
+    // 🌟 2. 评论总点赞数在 Redis 中累加 +1 (完全脱离 MySQL 行锁)
+    redisTemplate.opsForValue().increment(REDIS_COMMENT_LIKE_COUNTS + ":" + commentId, 1);
+}
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void unlikeComment(String userId, String commentId) {
-        // 1. 数据库评论点赞数 -1
-        Comment comment = commentMapper.selectById(commentId);
-        if(comment.getLikeCounts() > 0) {
-            comment.setLikeCounts(comment.getLikeCounts() - 1);
-            commentMapper.updateById(comment);
-        }
-        // 2. TODO: 可以在 Redis 移除用户点赞状态
+        // 1. 在 Redis 中移除用户点赞状态 (从 Set 剔除)
+        redisTemplate.opsForSet().remove(REDIS_USER_LIKE_COMMENT + ":" + userId, commentId);
+
+        // 🌟 2. 评论总点赞数在 Redis 中递减 -1
+        redisTemplate.opsForValue().decrement(REDIS_COMMENT_LIKE_COUNTS + ":" + commentId, 1);
     }
+
 }

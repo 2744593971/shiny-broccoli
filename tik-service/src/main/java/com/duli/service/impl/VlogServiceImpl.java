@@ -58,6 +58,27 @@ public class VlogServiceImpl extends ServiceImpl<VlogMapper, Vlog> implements IV
     ⭐得到刷到的最后一个视频的发布时间（时间戳）然后下一页就是比这个发布时间更早的视频，而不会查到新插入的视频们
      */
 
+    /**
+     * 如果查询只涉及单表查询（比如只查vlog表，没有复杂的多表JOIN等操作），
+     * 完全不需要在Mapper接口或XML文件中自己手写getIndexVlogList这样的方法。
+     *  / 1. 构造分页条件
+     * Page<Comment> pageable = new Page<>(page, pageSize);
+     *
+     * // 2. 构造查询条件 (相当于 WHERE vlog_id = ?)
+     * LambdaQueryWrapper<Comment> wrapper = new LambdaQueryWrapper<>();
+     * wrapper.eq(Comment::getVlogId, vlogId);
+     *
+     * // 3. ⭐直接调用自带的 selectPage (不需要自己写 mapper 方法)
+     * Page<Comment> result = commentMapper.selectPage(pageable, wrapper);
+     * // ⭐如果你在 Service 层，且继承了 ServiceImpl，也可以直接这样写：
+     * // Page<Comment> result = this.page(pageable, wrapper);
+     *
+     * @param userId
+     * @param search
+     * @param page
+     * @param pageSize
+     * @return
+     */
     @Override
     public Map<String, Object> getIndexVlogList(String userId, String search, Integer page, Integer pageSize) {
         Page<IndexVlogVO> pageParam = new Page<>(page, pageSize);

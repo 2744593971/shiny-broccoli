@@ -35,16 +35,16 @@ public class CommentController {
     @ApiOperation(value = "查询视频的评论列表")
     @GetMapping("/list")
     public GraceJSONResult commentList(@RequestParam String vlogId,
-                                       @RequestParam(required = false) String userId,
+                                       @RequestParam(required = false) String userId,//相当于于defaultValue = "",当客户端没有传递这个参数时，Controller 接收到的值为 null。
                                        @RequestParam(defaultValue = "1") Integer page,
                                        @RequestParam(defaultValue = "10") Integer pageSize) {
         
         Page<CommentVO> gridResult = commentService.queryVlogComments(vlogId, userId, page, pageSize);
         
         Map<String, Object> map = new HashMap<>();
-        map.put("rows", gridResult.getRecords());
-        map.put("total", gridResult.getPages());
-        map.put("records", gridResult.getTotal());
+        map.put("rows", gridResult.getRecords());//rows (gridResult.getRecords()): 当前页的具体数据列表（比如这10条评论的内容）。
+        map.put("total", gridResult.getPages());//total (gridResult.getPages()): 总页数（比如一共有50页）。
+        map.put("records", gridResult.getTotal());//records (gridResult.getTotal()): 总记录数（比如一共有 498 条评论）。
         
         return GraceJSONResult.success(map);
     }
