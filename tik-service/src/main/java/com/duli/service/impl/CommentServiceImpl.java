@@ -2,6 +2,7 @@ package com.duli.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.duli.bo.CommentBO;
@@ -93,24 +94,25 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
 
     @Override
     public Page<CommentVO> queryVlogComments(String vlogId, String userId, Integer page, Integer pageSize) {
+        //不仅仅是“声明”一下page, pageSize这两个参数，它其实也是在创建一个“双向数据载体（或者叫空盒子）”。
+        //result是装数据的实盒子，pageable是空盒子    内存地址是同一个
         Page<CommentVO> pageable = new Page<>(page, pageSize);
         // 从 MySQL 查出基础数据，此时 vo.getLikeCounts() 是滞后的
+        //commentMapper.getCommentList(pageable, vlogId);也一样可以，不需要返回值
         Page<CommentVO> result = commentMapper.getCommentList(pageable, vlogId);
 
-        for (CommentVO vo : result.getRecords()) {
+        for (CommentVO vo : result.getRecords()) {//getRecords() 就是单纯地把那一批真正的数据列表（也就是 List 集合）给拿出来
             String commentId = vo.getCommentId();
-
             // 🌟 1. 从 Redis 获取该评论的最新的总点赞数，覆盖 MySQL 里的旧数据
             String likeCountsStr = redisTemplate.opsForValue().get(REDIS_COMMENT_LIKE_COUNTS + ":" + commentId);
-            if (org.apache.commons.lang3.StringUtils.isNotBlank(likeCountsStr)) {
+            if (StringUtils.isNotBlank(likeCountsStr)) {
                 vo.setLikeCounts(Integer.valueOf(likeCountsStr));
             }
-
             // 2. 判断当前 userId 是否点赞了该评论
             vo.setIsLike(0);
-            if (org.apache.commons.lang3.StringUtils.isNotBlank(userId)) {
+            if (StringUtils.isNotBlank(userId)) {
                 Boolean isMember = redisTemplate.opsForSet().isMember(REDIS_USER_LIKE_COMMENT + ":" + userId, commentId);
-                if (isMember != null && isMember) {
+                if (isMember != null && isMember) {//如果点了赞
                     vo.setIsLike(1);
                 }
             }

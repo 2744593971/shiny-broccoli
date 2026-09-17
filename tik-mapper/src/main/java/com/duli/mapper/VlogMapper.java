@@ -14,6 +14,7 @@ import java.util.Map;
 @Repository
 public interface VlogMapper extends BaseMapper<Vlog> {
     // 🌟 把自定义的多表联查方法直接加在这里
+    //第一个参数加page使得sql出来的结果能分页
     Page<IndexVlogVO> getIndexVlogList(@Param("page") Page<IndexVlogVO> pageParam,
                                        @Param("paramMap") Map<String, Object> paramMap);
 
