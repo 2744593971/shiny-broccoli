@@ -200,7 +200,7 @@ public class VlogServiceImpl extends ServiceImpl<VlogMapper, Vlog> implements IV
             redisTemplate.opsForValue().increment("redis_vlog_be_liked_counts:" + vlogId, 1);
             redisTemplate.opsForValue().increment("redis_vloger_be_liked_counts:" + vlogerId, 1);
 
-            //todo 验证点赞视频功能
+            //done 验证点赞视频功能
             //3.消息功能
             Map<String,Object> msgContent = new HashMap<>();
             msgContent.put("vlogId",vlogId);

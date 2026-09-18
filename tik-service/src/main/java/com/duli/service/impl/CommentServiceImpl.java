@@ -70,7 +70,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
                 .setSql("comments_counts = comments_counts + 1");
         vlogMapper.update(null, vlogUpdateWrapper);
 
-        //todo 验证一下评论和回复评论功能
+        //验证评论和回复评论功能 都验证完成
         //消息功能
         Map<String, Object> msgContent = new HashMap<>();
         msgContent.put("vlogId", commentBO.getVlogId());
@@ -192,15 +192,37 @@ public void likeComment(String userId, String commentId) {
 
     // 🌟 2. 评论总点赞数在 Redis 中累加 +1 (完全脱离 MySQL 行锁)
     redisTemplate.opsForValue().increment(REDIS_COMMENT_LIKE_COUNTS + ":" + commentId, 1);
-    //TODO 验证一下自己写的
+    //TODO
     Comment comment=commentMapper.selectById(commentId);
-    Vlog vlog = vlogMapper.selectById(comment.getVlogId());
-    Map<String,Object> msgContent=new HashMap<>();
-    if(vlog!=null){
-        msgContent.put("vlogId",comment.getVlogId());
-        msgContent.put("vlogCover",vlog.getCover());
-    }
-    msgService.createMsg(userId,comment.getCommentUserId(),MessageEnum.LIKE_COMMENT,msgContent);
+    // 🛡️ 防御性编程：确保评论真的存在（防止用户点赞瞬间，评论刚好被作者删了）
+    if (comment != null) {
+        Map<String, Object> msgContent = new HashMap<>();
+        msgContent.put("vlogId", comment.getVlogId());
+        msgContent.put("commentId", commentId); // 建议顺手把 commentId 也放进去，方便前端后续可能需要的精准跳转
+
+        // 2. 查出对应视频获取封面
+        Vlog vlog = vlogMapper.selectById(comment.getVlogId());
+        if (vlog != null) {
+            msgContent.put("vlogCover", vlog.getCover());
+        }
+
+        // 3. 发送点赞评论的消息
+        // 发送方: userId (点赞的人)
+        // 接收方: comment.getCommentUserId() (写这条评论的人)
+        msgService.createMsg(
+                userId,
+                comment.getCommentUserId(),
+                MessageEnum.LIKE_COMMENT,
+                msgContent
+        );
+    }//点赞验证完成
+//    Vlog vlog = vlogMapper.selectById(comment.getVlogId());
+//    Map<String,Object> msgContent=new HashMap<>();
+//    if(vlog!=null){
+//        msgContent.put("vlogId",comment.getVlogId());
+//        msgContent.put("vlogCover",vlog.getCover());
+//    }
+//    msgService.createMsg(userId,comment.getCommentUserId(),MessageEnum.LIKE_COMMENT,msgContent);
 }
 
     @Override
