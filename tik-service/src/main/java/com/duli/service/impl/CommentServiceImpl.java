@@ -6,11 +6,13 @@ import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.duli.bo.CommentBO;
+import com.duli.enums.MessageEnum;
 import com.duli.mapper.CommentMapper;
 import com.duli.mapper.VlogMapper;
 import com.duli.pojo.Comment;
 import com.duli.pojo.Vlog;
 import com.duli.service.ICommentService;
+import com.duli.service.MsgService;
 import com.duli.vo.CommentVO;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> implements ICommentService {
@@ -33,6 +37,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
 
     @Autowired
     private VlogMapper vlogMapper;
+
+    @Autowired
+    private MsgService msgService;
 
     // 定义 Redis Key 的前缀：记录视频评论总数
     public static final String REDIS_VLOG_COMMENT_COUNTS = "redis_vlog_comment_counts";
@@ -62,6 +69,37 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
         vlogUpdateWrapper.eq("id", commentBO.getVlogId())
                 .setSql("comments_counts = comments_counts + 1");
         vlogMapper.update(null, vlogUpdateWrapper);
+
+        //todo 验证一下评论和回复评论功能
+        //消息功能
+        Map<String, Object> msgContent = new HashMap<>();
+        msgContent.put("vlogId", commentBO.getVlogId());
+        msgContent.put("commentContent", commentBO.getContent());
+
+        // 注意：前端消息列表可能需要展示视频封面，这里需要你去查一下
+        Vlog vlog = vlogMapper.selectById(commentBO.getVlogId());
+        if (vlog != null) {
+            msgContent.put("vlogCover", vlog.getCover());
+        }
+        // (3) 核心路由：根据 fatherCommentId 判断消息类型
+        if (StringUtils.isBlank(commentBO.getFatherCommentId())
+                || "0".equalsIgnoreCase(commentBO.getFatherCommentId())) {
+
+            // 情况 A：直接评论视频 -> 发给视频博主 (vlogerId)，类型为 COMMENT_VLOG (3)
+            msgService.createMsg(commentBO.getCommentUserId(), commentBO.getVlogerId(), MessageEnum.COMMENT_VLOG, msgContent);
+        } else {
+
+            // 情况 B：回复评论 -> 发给被回复的那条评论的作者，类型为 REPLY_YOU (4)
+            // 先去数据库查出被回复的那条评论是谁发的
+            Comment fatherComment = baseMapper.selectById(commentBO.getFatherCommentId());
+            if (fatherComment != null) {
+                msgService.createMsg(commentBO.getCommentUserId(),
+                        fatherComment.getCommentUserId(), // 接收者是父评论的作者
+                        MessageEnum.REPLY_YOU,
+                        msgContent
+                );
+            }
+        }
 
         // 返回新增的评论对象，前端拿到后直接追加 (push) 到列表最下方
         return comment;
@@ -154,6 +192,15 @@ public void likeComment(String userId, String commentId) {
 
     // 🌟 2. 评论总点赞数在 Redis 中累加 +1 (完全脱离 MySQL 行锁)
     redisTemplate.opsForValue().increment(REDIS_COMMENT_LIKE_COUNTS + ":" + commentId, 1);
+    //TODO 验证一下自己写的
+    Comment comment=commentMapper.selectById(commentId);
+    Vlog vlog = vlogMapper.selectById(comment.getVlogId());
+    Map<String,Object> msgContent=new HashMap<>();
+    if(vlog!=null){
+        msgContent.put("vlogId",comment.getVlogId());
+        msgContent.put("vlogCover",vlog.getCover());
+    }
+    msgService.createMsg(userId,comment.getCommentUserId(),MessageEnum.LIKE_COMMENT,msgContent);
 }
 
     @Override

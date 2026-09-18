@@ -3,9 +3,11 @@ package com.duli.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.duli.enums.MessageEnum;
 import com.duli.mapper.FansMapper;
 import com.duli.pojo.Fans;
 import com.duli.service.IFansService;
+import com.duli.service.MsgService;
 import com.duli.vo.FansVO;
 import com.duli.vo.VlogerVO;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +28,8 @@ public class FansServiceImpl extends ServiceImpl<FansMapper, Fans> implements IF
     private StringRedisTemplate redisTemplate;
     @Autowired
     private FansMapper fansMapper;
+    @Autowired
+    private MsgService msgService;
     @Override
     public boolean queryDoIFollowVloger(String myId, String vlogerId) {
         Fans fan = getSingleFan(myId, vlogerId);
@@ -35,7 +39,12 @@ public class FansServiceImpl extends ServiceImpl<FansMapper, Fans> implements IF
     @Transactional
     @Override
     public void doFollow(String myId, String vlogerId) {
-        // 1. 先判断对方是否已经关注了我 (查 fans 表: 博主是 myId, 粉丝是 vlogerId)
+        // 0. 防重校验：如果我已经关注了对方，直接结束，防止重复插入报错 (解决 DuplicateKeyException)
+        if (queryDoIFollowVloger(myId, vlogerId)) {
+            return;
+        }
+
+        // 1. 先判断对方是否已经关注了我
         QueryWrapper<Fans> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("vloger_id", myId).eq("fan_id", vlogerId);
         Fans vlogerFollowMeRecord = fansMapper.selectOne(queryWrapper);
@@ -45,12 +54,12 @@ public class FansServiceImpl extends ServiceImpl<FansMapper, Fans> implements IF
         fans.setFanId(myId);
         fans.setVlogerId(vlogerId);
 
-        if (vlogerFollowMeRecord != null) {
-            // 🌟 对方已经关注了我，说明这是“双向奔赴”
-            // 2.1 将我关注对方的记录标记为互粉 (1)
-            fans.setIsFanFriendOfMine(1);
+        // 🌟 核心提取：根据对方有没有关注我，直接得出是不是互关状态 (isFriend)
+        boolean isFriend = (vlogerFollowMeRecord != null);
 
-            // 2.2 把对方关注我的记录也更新为互粉 (1)
+        if (isFriend) {
+            // 对方已经关注了我，说明这是“双向奔赴”
+            fans.setIsFanFriendOfMine(1);
             vlogerFollowMeRecord.setIsFanFriendOfMine(1);
             fansMapper.updateById(vlogerFollowMeRecord);
         } else {
@@ -61,14 +70,26 @@ public class FansServiceImpl extends ServiceImpl<FansMapper, Fans> implements IF
         // 3. 把我的关注记录插入数据库
         fansMapper.insert(fans);
 
-        // 4. Redis 缓存累加逻辑 (使用我们之前定好的字符串)
+        // 4. Redis 缓存累加逻辑
         redisTemplate.opsForValue().increment("redis_my_follows_counts:" + myId, 1);
         redisTemplate.opsForValue().increment("redis_my_fans_counts:" + vlogerId, 1);
+
+        // 5. 发送 MongoDB 消息通知
+        Map<String, Object> msgContent = new HashMap<>();
+        // 直接复用上面的 isFriend 变量，省去了一次查数据库的操作！
+        msgContent.put("isFriend", isFriend);
+
+        msgService.createMsg(myId, vlogerId, MessageEnum.FOLLOW_YOU, msgContent);
     }
 
     @Transactional
     @Override
     public void doCancel(String myId, String vlogerId) {
+        // 0. 防重校验：如果我根本就没有关注对方，直接结束！防止 Redis 扣成负数
+        if (!queryDoIFollowVloger(myId, vlogerId)) {
+            return;
+        }
+
         // 1. 删除我关注对方的记录
         QueryWrapper<Fans> deleteWrapper = new QueryWrapper<>();
         deleteWrapper.eq("vloger_id", vlogerId).eq("fan_id", myId);
