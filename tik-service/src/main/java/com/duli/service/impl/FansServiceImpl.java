@@ -3,6 +3,8 @@ package com.duli.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.duli.config.RabbitMQConfig;
+import com.duli.dto.MessageMQDTO;
 import com.duli.enums.MessageEnum;
 import com.duli.mapper.FansMapper;
 import com.duli.pojo.Fans;
@@ -10,6 +12,7 @@ import com.duli.service.IFansService;
 import com.duli.service.MsgService;
 import com.duli.vo.FansVO;
 import com.duli.vo.VlogerVO;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -30,6 +33,8 @@ public class FansServiceImpl extends ServiceImpl<FansMapper, Fans> implements IF
     private FansMapper fansMapper;
     @Autowired
     private MsgService msgService;
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
     @Override
     public boolean queryDoIFollowVloger(String myId, String vlogerId) {
         Fans fan = getSingleFan(myId, vlogerId);
@@ -78,8 +83,15 @@ public class FansServiceImpl extends ServiceImpl<FansMapper, Fans> implements IF
         Map<String, Object> msgContent = new HashMap<>();
         // 直接复用上面的 isFriend 变量，省去了一次查数据库的操作！
         msgContent.put("isFriend", isFriend);
+        //⭐mq改造
+         MessageMQDTO mqdto = new MessageMQDTO();
+         mqdto.setFromUserId(myId);
+         mqdto.setToUserId(vlogerId);
+         mqdto.setMsgType(MessageEnum.FOLLOW_YOU.type);
+         mqdto.setMsgContent(msgContent);
+         rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE_MSG,"sys.msg.follow",mqdto);
 
-        msgService.createMsg(myId, vlogerId, MessageEnum.FOLLOW_YOU, msgContent);
+//        msgService.createMsg(myId, vlogerId, MessageEnum.FOLLOW_YOU, msgContent);
     }
 
     @Transactional

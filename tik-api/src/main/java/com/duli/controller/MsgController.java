@@ -5,10 +5,7 @@ import com.duli.service.MsgService;
 // 假设你有一个统一返回对象 GraceJSONResult，如果没有请替换为你项目中的通用返回类
 import com.duli.grace.result.GraceJSONResult;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -33,6 +30,15 @@ public class MsgController {
         
         // 前端代码通过 result.data.status == 200 来判断成功，因此必须用统一对象包装返回
         return GraceJSONResult.success(list);
+    }
+
+    @PostMapping("/delete")
+    public Object delete(@RequestParam String msgId) {
+
+        // 如果有必要，这里可以加上用户登录 token 的校验
+        msgService.deleteMsg(msgId);
+        // 返回你项目中通用的成功响应格式 (例如 GraceJSONResult.ok())
+        return GraceJSONResult.success();
     }
 
 

@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.duli.config.RabbitMQConfig;
+import com.duli.dto.MessageMQDTO;
 import com.duli.enums.MessageEnum;
 import com.duli.mapper.MyLikedVlogMapper;
 import com.duli.mapper.VlogMapper;
@@ -12,7 +14,9 @@ import com.duli.pojo.Vlog;
 import com.duli.bo.VlogBO;
 import com.duli.service.IVlogService;
 import com.duli.service.MsgService;
+import com.duli.service.mq.MsgConsumer;
 import com.duli.vo.IndexVlogVO;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -181,7 +185,8 @@ public class VlogServiceImpl extends ServiceImpl<VlogMapper, Vlog> implements IV
     }
     @Autowired
     private MsgService msgService;
-
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
     @Transactional
     @Override
     public void userLikeVlog(String userId, String vlogId, String vlogerId) {
@@ -205,11 +210,20 @@ public class VlogServiceImpl extends ServiceImpl<VlogMapper, Vlog> implements IV
             Map<String,Object> msgContent = new HashMap<>();
             msgContent.put("vlogId",vlogId);
             Vlog vlog= vlogMapper.selectById(vlogId);
-            if (vlog != null) {
-                msgContent.put("vlogCover", vlog.getCover());
+            if (vlog != null){
+                msgContent.put("vlogCover",vlog.getCover());
             }
+            MessageMQDTO mqdto = new MessageMQDTO();
+            mqdto.setFromUserId(userId);
+            mqdto.setToUserId(vlogerId);
+            mqdto.setMsgType(MessageEnum.LIKE_VLOG.type);
+            mqdto.setMsgContent(msgContent);
 
-            msgService.createMsg(userId,vlogerId, MessageEnum.LIKE_VLOG,msgContent);
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.EXCHANGE_MSG,
+                    "sys.msg.likevlog", // 路由键
+                    mqdto
+            );
         }
     }
 

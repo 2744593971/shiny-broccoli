@@ -1,5 +1,6 @@
 package com.duli.mo;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -38,6 +39,8 @@ public class MessageMO {
     private Map msgContent;              // 消息内容 用map存数据，前端从这里取
     //msg.msgContent.vlogId vlogId就是map的key：string
     @Field("createTime")
+    // 🌟 核心修复：强制转为东八区标准时间字符串输出给前端
+    @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm:ss")
     private Date createTime;            // 消息创建时间
     //msg.createTime
 }

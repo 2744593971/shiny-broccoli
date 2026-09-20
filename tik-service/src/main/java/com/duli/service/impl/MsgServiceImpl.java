@@ -83,4 +83,14 @@ public class MsgServiceImpl implements MsgService {
 
         return list;
     }
+
+    @Override
+    public void deleteMsg(String msgId) {
+        MessageMO msg = mongoTemplate.findById(msgId, MessageMO.class);
+        if (msg != null) {
+            mongoTemplate.remove(msg);
+        } else {
+            System.out.println("数据库中没找到这条消息，前端传来的 msgId 是: " + msgId);
+        }
+    }
 }

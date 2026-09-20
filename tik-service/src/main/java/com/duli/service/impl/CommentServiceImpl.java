@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.duli.bo.CommentBO;
+import com.duli.config.RabbitMQConfig;
+import com.duli.dto.MessageMQDTO;
 import com.duli.enums.MessageEnum;
 import com.duli.mapper.CommentMapper;
 import com.duli.mapper.VlogMapper;
@@ -14,6 +16,7 @@ import com.duli.pojo.Vlog;
 import com.duli.service.ICommentService;
 import com.duli.service.MsgService;
 import com.duli.vo.CommentVO;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -40,6 +43,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
 
     @Autowired
     private MsgService msgService;
+    // 注入 RabbitTemplate，不再直接注入 MsgService,实现解耦
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
 
     // 定义 Redis Key 的前缀：记录视频评论总数
     public static final String REDIS_VLOG_COMMENT_COUNTS = "redis_vlog_comment_counts";
@@ -70,11 +76,12 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
                 .setSql("comments_counts = comments_counts + 1");
         vlogMapper.update(null, vlogUpdateWrapper);
 
-        //验证评论和回复评论功能 都验证完成
+        //done 验证评论和回复评论功能
         //消息功能
         Map<String, Object> msgContent = new HashMap<>();
         msgContent.put("vlogId", commentBO.getVlogId());
         msgContent.put("commentContent", commentBO.getContent());
+        msgContent.put("commentId", comment.getId());
 
         // 注意：前端消息列表可能需要展示视频封面，这里需要你去查一下
         Vlog vlog = vlogMapper.selectById(commentBO.getVlogId());
@@ -82,28 +89,70 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
             msgContent.put("vlogCover", vlog.getCover());
         }
         // (3) 核心路由：根据 fatherCommentId 判断消息类型
+//        if (StringUtils.isBlank(commentBO.getFatherCommentId())
+//                || "0".equalsIgnoreCase(commentBO.getFatherCommentId())) {
+//
+//            // 情况 A：直接评论视频 -> 发给视频博主 (vlogerId)，类型为 COMMENT_VLOG (3)
+//            msgService.createMsg(commentBO.getCommentUserId(), commentBO.getVlogerId(), MessageEnum.COMMENT_VLOG, msgContent);
+//        } else {
+//
+//            // 情况 B：回复评论 -> 发给被回复的那条评论的作者，类型为 REPLY_YOU (4)
+//            // 先去数据库查出被回复的那条评论是谁发的
+//            Comment fatherComment = baseMapper.selectById(commentBO.getFatherCommentId());
+//            if (fatherComment != null) {
+//                msgService.createMsg(commentBO.getCommentUserId(),
+//                        fatherComment.getCommentUserId(), // 接收者是父评论的作者
+//                        MessageEnum.REPLY_YOU,
+//                        msgContent
+//                );
+//            }
+//        }
+//
+//        // 返回新增的评论对象，前端拿到后直接追加 (push) 到列表最下方
+//        return comment;
+        //⭐mq解耦
+        // (3) 核心路由：根据 fatherCommentId 判断消息类型
         if (StringUtils.isBlank(commentBO.getFatherCommentId())
                 || "0".equalsIgnoreCase(commentBO.getFatherCommentId())) {
 
             // 情况 A：直接评论视频 -> 发给视频博主 (vlogerId)，类型为 COMMENT_VLOG (3)
-            msgService.createMsg(commentBO.getCommentUserId(), commentBO.getVlogerId(), MessageEnum.COMMENT_VLOG, msgContent);
+            // 🌟 核心改造：使用 MQ 解耦
+            MessageMQDTO mqdto = new MessageMQDTO();
+            mqdto.setFromUserId(commentBO.getCommentUserId());
+            mqdto.setToUserId(commentBO.getVlogerId());
+            mqdto.setMsgType(MessageEnum.COMMENT_VLOG.type);
+            mqdto.setMsgContent(msgContent);
+
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.EXCHANGE_MSG,
+                    "sys.msg.comment", // 路由键
+                    mqdto
+            );
+
         } else {
 
             // 情况 B：回复评论 -> 发给被回复的那条评论的作者，类型为 REPLY_YOU (4)
-            // 先去数据库查出被回复的那条评论是谁发的
             Comment fatherComment = baseMapper.selectById(commentBO.getFatherCommentId());
             if (fatherComment != null) {
-                msgService.createMsg(commentBO.getCommentUserId(),
-                        fatherComment.getCommentUserId(), // 接收者是父评论的作者
-                        MessageEnum.REPLY_YOU,
-                        msgContent
+                // 🌟 核心改造：使用 MQ 解耦
+                MessageMQDTO mqdto = new MessageMQDTO();
+                mqdto.setFromUserId(commentBO.getCommentUserId());
+                mqdto.setToUserId(fatherComment.getCommentUserId()); // 接收者是父评论的作者
+                mqdto.setMsgType(MessageEnum.REPLY_YOU.type);
+                mqdto.setMsgContent(msgContent);
+
+                rabbitTemplate.convertAndSend(
+                        RabbitMQConfig.EXCHANGE_MSG,
+                        "sys.msg.reply", // 路由键
+                        mqdto
                 );
             }
         }
-
-        // 返回新增的评论对象，前端拿到后直接追加 (push) 到列表最下方
         return comment;
     }
+
+
+
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -184,6 +233,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
 //        redisTemplate.opsForSet().remove(REDIS_USER_LIKE_COMMENT + ":" + userId, commentId);
 //    }
     //⭐改造点赞和取消功能： 用redis存+mysql洗数据方式
+
 @Override
 @Transactional(rollbackFor = Exception.class)
 public void likeComment(String userId, String commentId) {
@@ -192,7 +242,7 @@ public void likeComment(String userId, String commentId) {
 
     // 🌟 2. 评论总点赞数在 Redis 中累加 +1 (完全脱离 MySQL 行锁)
     redisTemplate.opsForValue().increment(REDIS_COMMENT_LIKE_COUNTS + ":" + commentId, 1);
-    //TODO
+
     Comment comment=commentMapper.selectById(commentId);
     // 🛡️ 防御性编程：确保评论真的存在（防止用户点赞瞬间，评论刚好被作者删了）
     if (comment != null) {
@@ -209,13 +259,20 @@ public void likeComment(String userId, String commentId) {
         // 3. 发送点赞评论的消息
         // 发送方: userId (点赞的人)
         // 接收方: comment.getCommentUserId() (写这条评论的人)
-        msgService.createMsg(
-                userId,
-                comment.getCommentUserId(),
-                MessageEnum.LIKE_COMMENT,
-                msgContent
+        // 🌟 核心改造：封装 DTO 并发往 RabbitMQ，不在此处直接操作 MongoDB
+        MessageMQDTO mqdto = new MessageMQDTO();
+        mqdto.setFromUserId(userId);
+        mqdto.setToUserId(comment.getCommentUserId());
+        mqdto.setMsgType(MessageEnum.LIKE_COMMENT.type);
+        mqdto.setMsgContent(msgContent);
+
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.EXCHANGE_MSG,
+                "sys.msg.like", // RoutingKey，符合 sys.msg.# 的规则即可
+                mqdto
         );
-    }//点赞验证完成
+    }
+    //done 点赞评论验证完成
 //    Vlog vlog = vlogMapper.selectById(comment.getVlogId());
 //    Map<String,Object> msgContent=new HashMap<>();
 //    if(vlog!=null){

@@ -22,4 +22,9 @@ public interface MsgService {
     public List<MessageMO> queryList(String toUserId,
                                      Integer page,
                                      Integer pageSize);
+
+    /**
+     * 删除消息
+     */
+    public void deleteMsg(String msgId);
 }
