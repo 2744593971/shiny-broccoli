@@ -16,7 +16,7 @@ public class FileController {
     private AliyunOSSService aliyunOSSService;
 
     //@PostMapping("/upload")
-    public GraceJSONResult uploadVideo(@RequestParam String userId,
+    public GraceJSONResult uploadVideo(@RequestAttribute("currentUserId") String userId,
                                        @RequestParam("file") MultipartFile file) throws Exception {
 
         // 调用你改造后的通用方法，指定放入 "videos" 文件夹

@@ -16,7 +16,7 @@ import com.duli.pojo.Vlog;
 import com.duli.service.ICommentService;
 import com.duli.service.MsgService;
 import com.duli.vo.CommentVO;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import com.duli.service.IMessageOutboxService;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -45,7 +45,8 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
     private MsgService msgService;
     // 注入 RabbitTemplate，不再直接注入 MsgService,实现解耦
     @Autowired
-    private RabbitTemplate rabbitTemplate;
+    // ==================== Codex 优化：通知与业务同事务落Outbox，不在事务内访问RabbitMQ ====================
+    private IMessageOutboxService messageOutbox;
 
     // 定义 Redis Key 的前缀：记录视频评论总数
     public static final String REDIS_VLOG_COMMENT_COUNTS = "redis_vlog_comment_counts";
@@ -123,7 +124,8 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
             mqdto.setMsgType(MessageEnum.COMMENT_VLOG.type);
             mqdto.setMsgContent(msgContent);
 
-            rabbitTemplate.convertAndSend(
+            // Codex 优化：评论与通知记录同事务，提交失败不会发出“幽灵通知”。
+            messageOutbox.enqueue(
                     RabbitMQConfig.EXCHANGE_MSG,
                     "sys.msg.comment", // 路由键
                     mqdto
@@ -141,7 +143,8 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
                 mqdto.setMsgType(MessageEnum.REPLY_YOU.type);
                 mqdto.setMsgContent(msgContent);
 
-                rabbitTemplate.convertAndSend(
+                // Codex 优化：回复通知也使用同一事务Outbox，避免漏改分支。
+                messageOutbox.enqueue(
                         RabbitMQConfig.EXCHANGE_MSG,
                         "sys.msg.reply", // 路由键
                         mqdto
@@ -266,7 +269,8 @@ public void likeComment(String userId, String commentId) {
         mqdto.setMsgType(MessageEnum.LIKE_COMMENT.type);
         mqdto.setMsgContent(msgContent);
 
-        rabbitTemplate.convertAndSend(
+        // Codex 优化：取消事务内直接发MQ；注意Redis点赞状态仍不是MySQL事务资源。
+        messageOutbox.enqueue(
                 RabbitMQConfig.EXCHANGE_MSG,
                 "sys.msg.like", // RoutingKey，符合 sys.msg.# 的规则即可
                 mqdto

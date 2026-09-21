@@ -5,7 +5,7 @@ import com.duli.grace.result.GraceJSONResult;
 import com.duli.grace.result.ResponseStatusEnum;
 import com.duli.pojo.Users;
 import com.duli.service.IUsersService;
-import com.duli.service.MailService;
+import com.duli.service.mail.MailService;
 import com.duli.utils.IPUtil;
 import com.duli.utils.JwtUtil;
 import com.duli.vo.UserVO;

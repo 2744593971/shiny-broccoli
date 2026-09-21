@@ -26,5 +26,5 @@ public interface MsgService {
     /**
      * 删除消息
      */
-    public void deleteMsg(String msgId);
+    public boolean deleteMsg(String msgId, String currentUserId);
 }

@@ -1,6 +1,7 @@
 package com.duli.controller;
 
 import com.duli.bo.VlogBO;
+import com.duli.security.VideoAccess;
 import com.duli.service.IVlogService;
 import com.duli.vo.IndexVlogVO;
 import io.swagger.annotations.ApiOperation;
@@ -21,8 +22,13 @@ public class VlogController {
     @Autowired
     private IVlogService vlogService;
 
+    @Autowired
+    private VideoAccess videoAccess;
+
     @PostMapping("/publish")
-    public GraceJSONResult publish(@RequestBody VlogBO vlogBO) {
+    public GraceJSONResult publish(@RequestBody VlogBO vlogBO,
+                                   @RequestAttribute("currentUserId") String userId) {
+        vlogBO.setVlogerId(userId);
         // 🌟 修改校验：不仅防 null，还防空字符串
 //        if (StringUtils.isBlank(vlogBO.getVlogerId()) || StringUtils.isBlank(vlogBO.getUrl())) {
 //            return GraceJSONResult.errorMsg("视频还没上传完成，请稍后再试！");
@@ -33,7 +39,7 @@ public class VlogController {
 
 
     @GetMapping("/indexList")
-    public GraceJSONResult indexList(@RequestParam(defaultValue = "") String userId,
+    public GraceJSONResult indexList(@RequestAttribute(value = "currentUserId", required = false) String userId,
                                      @RequestParam(defaultValue = "") String search,
                                      @RequestParam(defaultValue = "1") Integer page,
                                      @RequestParam(defaultValue = "10") Integer pageSize) {
@@ -91,7 +97,10 @@ public class VlogController {
         String currentUserId = (String) request.getAttribute("currentUserId");
         if (currentUserId == null) currentUserId = "";
 
-        Map<String, Object> map = vlogService.getMyVlogList(userId, currentUserId, 1, page, pageSize);
+        if (StringUtils.isBlank(currentUserId) || !currentUserId.equals(userId)) {
+            return GraceJSONResult.errorMsg("只能查看自己的私密作品");
+        }
+        Map<String, Object> map = vlogService.getMyVlogList(currentUserId, currentUserId, 1, page, pageSize);
         return GraceJSONResult.success(map);
     }
 
@@ -99,9 +108,10 @@ public class VlogController {
     @GetMapping("/myLikedList")
     public GraceJSONResult myLikedList(@RequestParam String userId,
                                        @RequestParam(defaultValue = "1") Integer page,
-                                       @RequestParam(defaultValue = "10") Integer pageSize) {
+                                       @RequestParam(defaultValue = "10") Integer pageSize,
+                                       @RequestAttribute("currentUserId") String currentUserId) {
         // 调用查询点赞视频的方法
-        Map<String, Object> map = vlogService.getMyLikedList(userId, page, pageSize);
+        Map<String, Object> map = vlogService.getMyLikedList(userId, currentUserId, page, pageSize);
         return GraceJSONResult.success(map);
     }
 
@@ -110,13 +120,14 @@ public class VlogController {
      * 对应前端请求：/vlog/detail?userId=xxx&vlogId=xxx
      */
     @GetMapping("/detail")
-    public GraceJSONResult detail(@RequestParam(defaultValue = "") String userId,
+    public GraceJSONResult detail(@RequestAttribute("currentUserId") String userId,
                                   @RequestParam String vlogId) {
 
         if (StringUtils.isBlank(vlogId)) {
             return GraceJSONResult.errorMsg("视频ID不能为空");
         }
 
+        videoAccess.requireReadable(vlogId, userId);
         // 调用 Service 获取视频详情
         IndexVlogVO vlogDetail = vlogService.getVlogDetailById(userId, vlogId);
 
@@ -132,8 +143,9 @@ public class VlogController {
      * 对应前端请求：/vlog/changeToPrivate?userId=xxx&vlogId=xxx
      */
     @PostMapping("/changeToPrivate")
-    public GraceJSONResult changeToPrivate(@RequestParam String userId,
+    public GraceJSONResult changeToPrivate(@RequestAttribute("currentUserId") String userId,
                                            @RequestParam String vlogId) {
+        videoAccess.requireOwner(vlogId, userId);
         // 传入 1 代表私密
         vlogService.changeToPrivateOrPublic(userId, vlogId, 1);
         return GraceJSONResult.success();
@@ -144,17 +156,20 @@ public class VlogController {
      * 对应前端请求：/vlog/changeToPublic?userId=xxx&vlogId=xxx
      */
     @PostMapping("/changeToPublic")
-    public GraceJSONResult changeToPublic(@RequestParam String userId,
+    public GraceJSONResult changeToPublic(@RequestAttribute("currentUserId") String userId,
                                           @RequestParam String vlogId) {
+        videoAccess.requireOwner(vlogId, userId);
         // 传入 0 代表公开
         vlogService.changeToPrivateOrPublic(userId, vlogId, 0);
         return GraceJSONResult.success();
     }
 
     @PostMapping("/like")
-    public GraceJSONResult like(@RequestParam String userId,
-                                @RequestParam String vlogerId,
+    public GraceJSONResult like(@RequestAttribute("currentUserId") String userId,
+                                @RequestParam(required = false) String vlogerId,
                                 @RequestParam String vlogId) {
+
+        vlogerId = videoAccess.requireReadable(vlogId, userId).getVlogerId();
 
         if (StringUtils.isBlank(userId) || StringUtils.isBlank(vlogerId) || StringUtils.isBlank(vlogId)) {
             return GraceJSONResult.errorMsg("参数不能为空");
@@ -164,9 +179,11 @@ public class VlogController {
     }
 
     @PostMapping("/unlike")
-    public GraceJSONResult unlike(@RequestParam String userId,
-                                  @RequestParam String vlogerId,
+    public GraceJSONResult unlike(@RequestAttribute("currentUserId") String userId,
+                                  @RequestParam(required = false) String vlogerId,
                                   @RequestParam String vlogId) {
+
+        vlogerId = videoAccess.requireReadable(vlogId, userId).getVlogerId();
 
         if (StringUtils.isBlank(userId) || StringUtils.isBlank(vlogerId) || StringUtils.isBlank(vlogId)) {
             return GraceJSONResult.errorMsg("参数不能为空");
@@ -177,7 +194,9 @@ public class VlogController {
 
     @ApiOperation(value = "获取视频最新的总点赞数")
     @PostMapping("/totalLikedCounts")
-    public GraceJSONResult totalLikedCounts(@RequestParam String vlogId) {
+    public GraceJSONResult totalLikedCounts(@RequestParam String vlogId,
+            @RequestAttribute(value = "currentUserId", required = false) String userId) {
+        videoAccess.requireReadable(vlogId, userId);
 
         if (StringUtils.isBlank(vlogId)) {
             return GraceJSONResult.errorMsg("视频ID不能为空");
@@ -192,7 +211,7 @@ public class VlogController {
 
     @ApiOperation(value = "查询我关注的博主的视频列表")
     @GetMapping("/followList")
-    public GraceJSONResult followList(@RequestParam String myId,
+    public GraceJSONResult followList(@RequestAttribute("currentUserId") String myId,
                                       @RequestParam(defaultValue = "1") Integer page,
                                       @RequestParam(defaultValue = "10") Integer pageSize) {
 
@@ -206,7 +225,7 @@ public class VlogController {
 
     @ApiOperation(value = "查询朋友（互粉）的视频列表")
     @GetMapping("/friendList")
-    public GraceJSONResult friendList(@RequestParam String myId,
+    public GraceJSONResult friendList(@RequestAttribute("currentUserId") String myId,
                                       @RequestParam(defaultValue = "1") Integer page,
                                       @RequestParam(defaultValue = "10") Integer pageSize) {
 

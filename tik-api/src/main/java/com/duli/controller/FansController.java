@@ -20,7 +20,7 @@ public class FansController {
      * 对应前端：/fans/queryDoIFollowVloger?myId=xxx&vlogerId=xxx
      */
     @GetMapping("/queryDoIFollowVloger")
-    public GraceJSONResult queryDoIFollowVloger(@RequestParam String myId, 
+    public GraceJSONResult queryDoIFollowVloger(@RequestAttribute("currentUserId") String myId,
                                                 @RequestParam String vlogerId) {
         boolean isFollow = fansService.queryDoIFollowVloger(myId, vlogerId);
         return GraceJSONResult.success(isFollow);
@@ -31,7 +31,7 @@ public class FansController {
      * 对应前端：/fans/follow?myId=xxx&vlogerId=xxx
      */
     @PostMapping("/follow")
-    public GraceJSONResult follow(@RequestParam String myId, 
+    public GraceJSONResult follow(@RequestAttribute("currentUserId") String myId,
                                   @RequestParam String vlogerId) {
         // myId 是粉丝，vlogerId 是被关注的博主
         fansService.doFollow(myId, vlogerId);
@@ -43,7 +43,7 @@ public class FansController {
      * 对应前端：/fans/cancel?myId=xxx&vlogerId=xxx
      */
     @PostMapping("/cancel")
-    public GraceJSONResult cancel(@RequestParam String myId, 
+    public GraceJSONResult cancel(@RequestAttribute("currentUserId") String myId,
                                   @RequestParam String vlogerId) {
         fansService.doCancel(myId, vlogerId);
         return GraceJSONResult.success();
@@ -54,7 +54,7 @@ public class FansController {
      * 对应前端：/fans/queryMyFollows?myId=xxx&page=1&pageSize=10
      */
     @GetMapping("/queryMyFollows")
-    public GraceJSONResult queryMyFollows(@RequestParam String myId,
+    public GraceJSONResult queryMyFollows(@RequestAttribute("currentUserId") String myId,
                                           @RequestParam(defaultValue = "1") Integer page,
                                           @RequestParam(defaultValue = "10") Integer pageSize) {
         Map<String, Object> result = fansService.queryMyFollows(myId, page, pageSize);
@@ -67,7 +67,7 @@ public class FansController {
      * 对应前端：/fans/queryMyFans?myId=xxx&page=1&pageSize=10
      */
     @GetMapping("/queryMyFans")
-    public GraceJSONResult queryMyFans(@RequestParam String myId,
+    public GraceJSONResult queryMyFans(@RequestAttribute("currentUserId") String myId,
                                        @RequestParam(defaultValue = "1") Integer page,
                                        @RequestParam(defaultValue = "10") Integer pageSize) {
         Map<String, Object> result = fansService.queryMyFans(myId, page, pageSize);

@@ -27,7 +27,8 @@ public interface VlogMapper extends BaseMapper<Vlog> {
 
     // ⚠️ 第一个参数必须是 Page 对象
     Page<IndexVlogVO> getMyLikedList(Page<IndexVlogVO> page,
-                                     @Param("userId") String userId);
+                                     @Param("userId") String userId,
+                                     @Param("currentUserId") String currentUserId);
     // 连表查询视频详情，以及当前用户对该视频的点赞/关注状态
     List<IndexVlogVO> getVlogDetailById(@Param("userId") String userId,
                                         @Param("vlogId") String vlogId);

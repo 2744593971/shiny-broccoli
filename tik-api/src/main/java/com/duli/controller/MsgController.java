@@ -21,11 +21,11 @@ public class MsgController {
      * 对应前端请求: GET /msg/list?userId={userId}&page={page}&pageSize=10
      */
     @GetMapping("/list")
-    public Object queryList(@RequestParam String userId,
+    public Object queryList(@RequestAttribute("currentUserId") String userId,
                             @RequestParam Integer page,
                             @RequestParam Integer pageSize) {
         
-        // 前端传来的 userId 实际上就是 MessageMO 里的 toUserId (接收方)
+        // 消息接收者只能是 Token 验证过的当前用户。
         List<MessageMO> list = msgService.queryList(userId, page, pageSize);
         
         // 前端代码通过 result.data.status == 200 来判断成功，因此必须用统一对象包装返回
@@ -33,10 +33,12 @@ public class MsgController {
     }
 
     @PostMapping("/delete")
-    public Object delete(@RequestParam String msgId) {
+    public Object delete(@RequestParam String msgId,
+                         @RequestAttribute("currentUserId") String userId) {
 
-        // 如果有必要，这里可以加上用户登录 token 的校验
-        msgService.deleteMsg(msgId);
+        if (!msgService.deleteMsg(msgId, userId)) {
+            return GraceJSONResult.errorMsg("消息不存在或无权删除");
+        }
         // 返回你项目中通用的成功响应格式 (例如 GraceJSONResult.ok())
         return GraceJSONResult.success();
     }

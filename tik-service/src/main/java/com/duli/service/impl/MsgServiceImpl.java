@@ -38,7 +38,7 @@ public class MsgServiceImpl implements MsgService {
         messageMO.setCreateTime(new Date());
 
         // --- 核心新增逻辑：查询发送者的用户信息并赋值 ---
-        // 这里替换为你真实的查询代码
+
         Users user = usersService.getById(fromUserId);
         if (user != null) {
             messageMO.setFromNickname(user.getNickname());
@@ -85,12 +85,13 @@ public class MsgServiceImpl implements MsgService {
     }
 
     @Override
-    public void deleteMsg(String msgId) {
-        MessageMO msg = mongoTemplate.findById(msgId, MessageMO.class);
-        if (msg != null) {
-            mongoTemplate.remove(msg);
-        } else {
-            System.out.println("数据库中没找到这条消息，前端传来的 msgId 是: " + msgId);
+    public boolean deleteMsg(String msgId, String currentUserId) {
+        if (org.apache.commons.lang3.StringUtils.isBlank(currentUserId)) {
+            return false;
         }
+        // 将归属校验和删除放进同一个数据库操作。
+        Query query = new Query(Criteria.where("id").is(msgId)
+                .and("toUserId").is(currentUserId));
+        return mongoTemplate.remove(query, MessageMO.class).getDeletedCount() > 0;
     }
 }

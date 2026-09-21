@@ -98,6 +98,13 @@ public GraceJSONResult query(@RequestParam(defaultValue = "") String userId,
     UserVO userVO = new UserVO();
     BeanUtils.copyProperties(user, userVO);
 
+    // 公开主页不返回对方的登录联系方式。
+    if (!userId.equals(request.getAttribute("currentUserId"))) {
+        userVO.setMobile(null);
+        userVO.setEmail(null);
+        userVO.setUserToken(null);
+    }
+
     // 4. 使用“缓存旁路模式”获取粉丝数和关注数（Redis + MySQL 兜底）
     userVO.setMyFansCounts(getFansCount(userId));
     userVO.setMyFollowsCounts(getFollowsCount(userId));

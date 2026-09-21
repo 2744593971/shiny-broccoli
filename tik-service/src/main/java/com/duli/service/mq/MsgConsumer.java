@@ -13,7 +13,8 @@ public class MsgConsumer {
 
     @Autowired
     private MsgService msgService;
-
+//@RabbitListener(queues = RabbitMQConfig.QUEUE_SYS_MSG) 注解，
+// 它死死盯住你配置好的系统消息队列。只要队列里被交换机塞进了新消息，这个方法就会瞬间被触发。
     @RabbitListener(queues = RabbitMQConfig.QUEUE_SYS_MSG)
     public void watchSysMsgQueue(MessageMQDTO payload) {
         System.out.println("MQ 消费者接收到消息，准备存入 MongoDB...");
@@ -28,7 +29,7 @@ public class MsgConsumer {
         }
 
         if (currentEnum != null) {
-            // 调用你原有的 MongoDB 写入逻辑
+            // 调用原有的 MongoDB 写入逻辑
             msgService.createMsg(
                     payload.getFromUserId(),
                     payload.getToUserId(),

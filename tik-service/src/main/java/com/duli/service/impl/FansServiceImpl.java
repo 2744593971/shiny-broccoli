@@ -12,7 +12,7 @@ import com.duli.service.IFansService;
 import com.duli.service.MsgService;
 import com.duli.vo.FansVO;
 import com.duli.vo.VlogerVO;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import com.duli.service.IMessageOutboxService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -34,14 +34,15 @@ public class FansServiceImpl extends ServiceImpl<FansMapper, Fans> implements IF
     @Autowired
     private MsgService msgService;
     @Autowired
-    private RabbitTemplate rabbitTemplate;
+    // ==================== Codex 优化：通知与业务同事务落Outbox，不在事务内访问RabbitMQ ====================
+    private IMessageOutboxService messageOutbox;
     @Override
     public boolean queryDoIFollowVloger(String myId, String vlogerId) {
         Fans fan = getSingleFan(myId, vlogerId);
         return fan != null;
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     @Override
     public void doFollow(String myId, String vlogerId) {
         // 0. 防重校验：如果我已经关注了对方，直接结束，防止重复插入报错 (解决 DuplicateKeyException)
@@ -89,7 +90,8 @@ public class FansServiceImpl extends ServiceImpl<FansMapper, Fans> implements IF
          mqdto.setToUserId(vlogerId);
          mqdto.setMsgType(MessageEnum.FOLLOW_YOU.type);
          mqdto.setMsgContent(msgContent);
-         rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE_MSG,"sys.msg.follow",mqdto);
+         // Codex 优化：关注提交才会投递；关注回滚时此记录一起回滚。
+         messageOutbox.enqueue(RabbitMQConfig.EXCHANGE_MSG,"sys.msg.follow",mqdto);
 
 //        msgService.createMsg(myId, vlogerId, MessageEnum.FOLLOW_YOU, msgContent);
     }

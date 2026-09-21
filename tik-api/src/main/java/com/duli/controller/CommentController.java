@@ -4,6 +4,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.duli.bo.CommentBO;
+import com.duli.security.VideoAccess;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import com.duli.grace.result.GraceJSONResult;
 import com.duli.pojo.Comment;
 import com.duli.service.ICommentService;
@@ -25,9 +28,22 @@ public class CommentController {
     @Autowired
     private ICommentService commentService;
 
+    @Autowired
+    private VideoAccess videoAccess;
+
     @ApiOperation(value = "发表或回复评论")
     @PostMapping("/create")
-    public GraceJSONResult createComment(@RequestBody CommentBO commentBO) {
+    public GraceJSONResult createComment(@RequestBody CommentBO commentBO,
+            @RequestAttribute("currentUserId") String userId) {
+        commentBO.setCommentUserId(userId);
+        commentBO.setVlogerId(videoAccess.requireReadable(commentBO.getVlogId(), userId).getVlogerId());
+        String parentId = commentBO.getFatherCommentId();
+        if (StringUtils.isNotBlank(parentId) && !"0".equals(parentId)) {
+            Comment parent = commentService.getById(parentId);
+            if (parent == null || !commentBO.getVlogId().equals(parent.getVlogId())) {
+                return GraceJSONResult.errorMsg("回复的评论不存在或不属于当前视频");
+            }
+        }
         Comment comment = commentService.createComment(commentBO);
         return GraceJSONResult.success(comment);
     }
@@ -35,10 +51,11 @@ public class CommentController {
     @ApiOperation(value = "查询视频的评论列表")
     @GetMapping("/list")
     public GraceJSONResult commentList(@RequestParam String vlogId,
-                                       @RequestParam(required = false) String userId,//相当于于defaultValue = "",当客户端没有传递这个参数时，Controller 接收到的值为 null。
+                                       @RequestAttribute(value = "currentUserId", required = false) String userId,
                                        @RequestParam(defaultValue = "1") Integer page,
                                        @RequestParam(defaultValue = "10") Integer pageSize) {
         
+        videoAccess.requireReadable(vlogId, userId);
         Page<CommentVO> gridResult = commentService.queryVlogComments(vlogId, userId, page, pageSize);
         
         Map<String, Object> map = new HashMap<>();
@@ -56,7 +73,9 @@ public class CommentController {
 
     @ApiOperation(value = "获得视频总评论数")
     @GetMapping("/counts")
-    public GraceJSONResult commentCounts(@RequestParam String vlogId) {
+    public GraceJSONResult commentCounts(@RequestParam String vlogId,
+            @RequestAttribute(value = "currentUserId", required = false) String userId) {
+        videoAccess.requireReadable(vlogId, userId);
         // 🌟 1. 优先从 Redis 中获取最新的总数
         String countStr = redisTemplate.opsForValue().get(REDIS_VLOG_COMMENT_COUNTS + ":" + vlogId);
 
@@ -78,26 +97,41 @@ public class CommentController {
 
     @ApiOperation(value = "删除评论")
     @DeleteMapping("/delete")
-    public GraceJSONResult deleteComment(@RequestParam String commentUserId,
+    public GraceJSONResult deleteComment(@RequestAttribute("currentUserId") String commentUserId,
                                          @RequestParam String commentId,
                                          @RequestParam String vlogId) {
+        Comment target = commentService.getById(commentId);
+        if (target == null || !commentUserId.equals(target.getCommentUserId())
+                || !vlogId.equals(target.getVlogId())) {
+            return GraceJSONResult.errorMsg("评论不存在或无权删除");
+        }
         commentService.deleteComment(commentUserId, commentId, vlogId);
         return GraceJSONResult.success();
     }
 
     @ApiOperation(value = "点赞评论")
     @PostMapping("/like")
-    public GraceJSONResult likeComment(@RequestParam String userId,
+    public GraceJSONResult likeComment(@RequestAttribute("currentUserId") String userId,
                                        @RequestParam String commentId) {
+        requireReadableComment(commentId, userId);
         commentService.likeComment(userId, commentId);
         return GraceJSONResult.success();
     }
 
     @ApiOperation(value = "取消点赞评论")
     @PostMapping("/unlike")
-    public GraceJSONResult unlikeComment(@RequestParam String userId,
+    public GraceJSONResult unlikeComment(@RequestAttribute("currentUserId") String userId,
                                          @RequestParam String commentId) {
+        requireReadableComment(commentId, userId);
         commentService.unlikeComment(userId, commentId);
         return GraceJSONResult.success();
+    }
+
+    private void requireReadableComment(String commentId, String userId) {
+        Comment comment = commentService.getById(commentId);
+        if (comment == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "评论不存在或无权访问");
+        }
+        videoAccess.requireReadable(comment.getVlogId(), userId);
     }
 }

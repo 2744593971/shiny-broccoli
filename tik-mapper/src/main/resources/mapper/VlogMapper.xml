@@ -143,6 +143,7 @@
             my_liked_vlog m ON v.id = m.vlog_id
         WHERE
             m.user_id = #{userId}
+            AND (v.is_private = 0 OR v.vloger_id = #{currentUserId})
         ORDER BY
             v.created_time DESC
     </select>
@@ -168,6 +169,7 @@
             users u ON v.vloger_id = u.id
         WHERE
             v.id = #{vlogId}
+            AND (v.is_private = 0 OR v.vloger_id = #{userId})
     </select>
 
     <select id="getMyFollowVlogList" resultType="com.duli.vo.IndexVlogVO">

@@ -16,7 +16,7 @@ import com.duli.service.IVlogService;
 import com.duli.service.MsgService;
 import com.duli.service.mq.MsgConsumer;
 import com.duli.vo.IndexVlogVO;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import com.duli.service.IMessageOutboxService;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -148,9 +148,9 @@ public class VlogServiceImpl extends ServiceImpl<VlogMapper, Vlog> implements IV
     }
 
     @Override
-    public Map<String, Object> getMyLikedList(String userId, Integer page, Integer pageSize) {
+    public Map<String, Object> getMyLikedList(String userId, String currentUserId, Integer page, Integer pageSize) {
         Page<IndexVlogVO> pageParam = new Page<>(page, pageSize);
-        vlogMapper.getMyLikedList(pageParam, userId);
+        vlogMapper.getMyLikedList(pageParam, userId, currentUserId);
 // 🌟🌟🌟 核心：查完之后，把 Records 丢进去洗一遍！
         setterVOs(pageParam.getRecords());
         Map<String, Object> map = new HashMap<>();
@@ -186,8 +186,9 @@ public class VlogServiceImpl extends ServiceImpl<VlogMapper, Vlog> implements IV
     @Autowired
     private MsgService msgService;
     @Autowired
-    private RabbitTemplate rabbitTemplate;
-    @Transactional
+    // ==================== Codex 优化：通知与业务同事务落Outbox，不在事务内访问RabbitMQ ====================
+    private IMessageOutboxService messageOutbox;
+    @Transactional(rollbackFor = Exception.class)
     @Override
     public void userLikeVlog(String userId, String vlogId, String vlogerId) {
         // 1. 先查询是否已经存在这条点赞记录，防止重复插入报错
@@ -219,9 +220,10 @@ public class VlogServiceImpl extends ServiceImpl<VlogMapper, Vlog> implements IV
             mqdto.setMsgType(MessageEnum.LIKE_VLOG.type);
             mqdto.setMsgContent(msgContent);
 
-            rabbitTemplate.convertAndSend(
+            // Codex 优化：点赞事务只写待发送记录，由独立任务在提交后投递。
+            messageOutbox.enqueue(
                     RabbitMQConfig.EXCHANGE_MSG,
-                    "sys.msg.likevlog", // 路由键
+                    "sys.msg.likevlog", // 路由键控制队列
                     mqdto
             );
         }

@@ -24,7 +24,7 @@ public interface IVlogService extends IService<Vlog> {
     // 🌟 修改：加入 currentUserId 参数用来判断点赞/关注状态
     Map<String, Object> getMyVlogList(String vlogerId, String currentUserId, Integer isPrivate, Integer page, Integer pageSize);
 
-    Map<String, Object> getMyLikedList(String userId, Integer page, Integer pageSize);
+    Map<String, Object> getMyLikedList(String userId, String currentUserId, Integer page, Integer pageSize);
 
     // 查询视频详情
     IndexVlogVO getVlogDetailById(String userId, String vlogId);

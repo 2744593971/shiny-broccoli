@@ -1,4 +1,4 @@
-package com.duli.service;
+package com.duli.service.mail;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
