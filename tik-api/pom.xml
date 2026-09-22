@@ -16,10 +16,19 @@
 
 
     <dependencies>
-        <!-- 引入 Nacos 服务发现功能 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!--  Nacos服务注册与发现-->
         <dependency>
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <!--分布式（微服务）配置中心-->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
         </dependency>
 
         <!-- 仅测试使用：内存数据库验证并发库存、唯一约束和事务回滚，不连接业务 MySQL。 -->
