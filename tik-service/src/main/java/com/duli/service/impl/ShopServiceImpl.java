@@ -14,7 +14,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.*;
 
 /**
- * 同步事务版秒杀：条件扣库存 + 唯一索引 + 幂等返回。
+ * 异步下单消费者中的库存事务：条件扣库存 + 唯一索引 + 幂等返回。
  * 数据库是库存/订单唯一事实来源，不维护第二份 Redis 库存，避免跨系统回滚不一致。
  * 适合当前单体项目；不是宣称能承受任意流量的分布式秒杀平台。
  */
@@ -58,7 +58,12 @@ public class ShopServiceImpl implements IShopService {
         return order;
     }
 
-    /** 幂等下单并占库存，在同一事务保存十五分钟后到期的关单事件。 */
+    /**
+     * 真正执行一笔购买：先用 requestId/场次找已有订单，再在事务内重新读取活动、
+     * 校验数据库时间、先扣活动配额后扣商品总库存，最后插订单和到期/通知事件。
+     * 唯一索引解决并发重复购买；异常在事务外捕获后回查已提交的赢家订单。
+     * 任一库存更新或插入失败都回滚，不在 Redis 保存第二份库存。
+     */
     public ShopOrder place(String userId, ShopOrderBO input) {
         if (userId == null || userId.trim().isEmpty()) throw new ShopException(401, "请先登录");
         // 先查成功订单：网络超时后，即使活动已结束，也应该返回上次成功结果。
@@ -67,6 +72,7 @@ public class ShopServiceImpl implements IShopService {
         try {
             return transaction.execute(status -> {//真正属于一个事务的是 place()方法里这一段
                 ShopItem item = load(input.getProductId(), input.getActivityId());
+                // 进入库存事务后用数据库时钟校验；页面展示或请求被受理都不保证消费时活动仍有效。
                 if (item.getActivityId() != null) {
                     long now = repository.now();
                     if (now < item.getStartsAt()) throw new ShopException(409, "秒杀尚未开始");
@@ -75,6 +81,7 @@ public class ShopServiceImpl implements IShopService {
                     if (repository.takeActivity(item.getActivityId()) != 1)
                         throw new ShopException(409, "本场名额已抢完或活动已结束");
                 }
+                // 活动配额和商品总库存必须都扣成功，否则同一事务回滚两者，避免超卖/错扣。
                 if (repository.takeProduct(item.getId()) != 1)
                     throw new ShopException(409, "商品库存不足或已下架");
                 ShopOrder order = new ShopOrder();
@@ -92,6 +99,7 @@ public class ShopServiceImpl implements IShopService {
                 order.setReceiverPhone(input.getReceiverPhone());
                 order.setReceiverAddress(input.getReceiverAddress());
                 order.setExpiresAt(repository.now() + 15 * 60 * 1000L);
+                // 唯一索引兜底 requestId 和一人一场一单；订单、库存及后续事件一起提交。
                 repository.insert(order);
                 events.enqueue("ORDER_EXPIRE",order.getId(),order.getExpiresAt());
                 events.enqueue("ORDER_CREATED",order.getId(),repository.now());

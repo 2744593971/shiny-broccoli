@@ -104,10 +104,12 @@ public class ShopRepository {
         return jdbc.update("UPDATE shop_product SET stock=stock-1" +
                 " WHERE id=? AND enabled=1 AND stock>0", id);
     }
+    /** 原子扣活动配额，同时用数据库时间检查窗口；返回 0 即竞争失败或活动已结束。 */
     public int takeActivity(String id) {
         return jdbc.update("UPDATE shop_activity SET stock=stock-1 WHERE id=? AND enabled=1" +
                 " AND stock>0 AND starts_at<=CURRENT_TIMESTAMP AND ends_at>CURRENT_TIMESTAMP", id);
     }
+    /** 订单价格和身份都由服务端生成；插入必须与两次库存 UPDATE 处于同一事务。 */
     public void insert(ShopOrder order) {
         jdbc.update("INSERT INTO shop_order" +
                 " (id,user_id,product_id,activity_id,request_id,title,cover,amount,status,created_at," +

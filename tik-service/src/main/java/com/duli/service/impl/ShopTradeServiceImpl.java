@@ -157,6 +157,7 @@ public class ShopTradeServiceImpl implements IShopTradeService {
             return order;
         }
         String outcome;
+        // 支付回调到达时仍用数据库时钟判断是否过期；迟到成功不能复活已关单订单。
         if("WAIT_PAY".equals(order.getStatus())&&order.getExpiresAt()!=null&&shop.now()>=order.getExpiresAt()) {
             closeOrder(order,"EXPIRED");outcome="LATE_REJECTED";
         } else if(Arrays.asList("CANCELLED","EXPIRED").contains(order.getStatus())) {
@@ -258,11 +259,16 @@ public class ShopTradeServiceImpl implements IShopTradeService {
     /** 先关闭 Mock 渠道，再在同一事务内关闭订单、释放库存并保存关闭事件。 */
     private void closeOrder(ShopOrder order,String status) {
         gateway.close(trade.payment(order.getId()));
+        // 订单状态、商品库存和活动配额的回补由同一事务裁决，重复取消/到期不再回补。
         trade.close(order,status);
         events.enqueue("ORDER_CLOSED",order.getId(),shop.now());
     }
 
-    /** 消费 MQ 事件：锁订单、核验事件、处理到期关单、写回执同事务提交。 */
+    /**
+     * 交易事件消费统一入口：按事件 ID 回查权威记录，锁订单后先查回执。
+     * ORDER_EXPIRE 到时才关闭 WAIT_PAY 并回补库存；其他状态事件生成本人通知。
+     * 业务处理、通知和回执同事务提交，异常回滚后由有限重试/死信恢复。
+     */
     public void consumeEvent(String eventId) {
         tx.execute(status->{
             com.duli.pojo.ShopTradeEvent event=events.find(eventId);
@@ -270,6 +276,7 @@ public class ShopTradeServiceImpl implements IShopTradeService {
             ShopOrder order=trade.lock(event.getOrderId(),null);
             if(order==null) throw new ShopException(404,"事件对应订单不存在");
             if(events.consumed(eventId)) return null;
+            // 到期事件有业务效果；普通状态事件仅写本人消息。回执与处理结果一起提交。
             switch(event.getEventType()) {
                 case "ORDER_EXPIRE":
                     if("WAIT_PAY".equals(order.getStatus())) {

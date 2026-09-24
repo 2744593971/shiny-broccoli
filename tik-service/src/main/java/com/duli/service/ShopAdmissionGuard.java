@@ -14,6 +14,7 @@ public class ShopAdmissionGuard {
  private final StringRedisTemplate redis;
  private final Semaphore slots;
  private final int globalLimit,userLimit;
+ /** 一个 Lua 调用同时检查并递增全局/用户计数；任一超限时两个计数都不变。 */
  private static final DefaultRedisScript<Long> LIMIT=new DefaultRedisScript<>(
    "local g=tonumber(redis.call('get',KEYS[1]) or '0'); "
   +"local u=tonumber(redis.call('get',KEYS[2]) or '0'); "
@@ -27,11 +28,17 @@ public class ShopAdmissionGuard {
   this.redis=redis;this.globalLimit=Math.max(1,global);this.userLimit=Math.max(1,user);
   this.slots=new Semaphore(Math.max(1,concurrency));
  }
- /** 非阻塞受理；Redis 不可用时快速返回 503，禁止降级为无保护直写库存。 */
+ /**
+  * 先用 Semaphore 限制当前实例并发，再由 Lua 原子判断全局/用户每秒配额。
+  * 任一限额触发返回 429；Redis 故障返回 503，绝不绕开限流直接写 MySQL。
+  * 成功取得名额后由 submit 的 finally 调用 leave；本方法失败则自行释放。
+  */
  public void enter(String user) {
   if(user==null||user.trim().isEmpty()) throw new ShopException(401,"请先登录");
+  // 先限制单实例正在受理的 HTTP 数，避免本机线程堆积；成功后必须由调用方 finally 释放。
   if(!slots.tryAcquire()) throw new ShopException(429,"当前下单人数较多，请稍后重试");
   try {
+   // 两个键共用 Redis Cluster hash tag；限流只保护入口，商品库存仍以 MySQL 为准。
    Long allowed=redis.execute(LIMIT,Arrays.asList("shop:{admission}:global","shop:{admission}:user:"+user),
        String.valueOf(globalLimit),String.valueOf(userLimit));
    if(!Long.valueOf(1).equals(allowed)) throw new ShopException(429,"下单过于频繁，请稍后重试");

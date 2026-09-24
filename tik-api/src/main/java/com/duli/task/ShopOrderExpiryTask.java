@@ -13,6 +13,7 @@ public class ShopOrderExpiryTask {
     public ShopOrderExpiryTask(IShopTradeService trade) { this.trade=trade; }
     /** 每分钟执行数据库扫描兜底，独立于 RabbitMQ 到期事件。 */
     @Scheduled(fixedDelay=60000,initialDelay=60000)
+    // 即使延迟 MQ 投递失败，仍扫描数据库到期 WAIT_PAY 订单；状态与行锁保证只回补一次。
     public void closeExpired() {
         try { trade.expireOrders(); }
         catch(Exception error) {

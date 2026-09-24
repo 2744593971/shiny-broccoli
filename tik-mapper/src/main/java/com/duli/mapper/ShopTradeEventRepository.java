@@ -45,6 +45,7 @@ public class ShopTradeEventRepository {
     }
 
     /** 原子抢占一分钟租约，避免多实例同时发送同一事件。 */
+    // 条件 UPDATE 先抢占租约，再按 token 读取；只有抢到的实例才可投递到 RabbitMQ。
     public ShopTradeEvent claim(String id,String token) {
         if(jdbc.update("UPDATE shop_trade_event SET status='IN_FLIGHT',attempts=attempts+1,lease_token=?,lease_until=? "
                 +"WHERE id=? AND "+DUE+" AND attempts<10 AND consumed_at IS NULL",
@@ -90,6 +91,7 @@ public class ShopTradeEventRepository {
     }
 
     /** 与消费者业务一同提交；失败回滚时回执也消失，允许安全重试。 */
+    // 回执与消费者业务同事务：提交成功后重复消息只需确认，失败回滚后可重试。
     public void receipt(ShopTradeEvent e) {
         jdbc.update("INSERT INTO shop_trade_receipt(event_id,order_id,event_type) VALUES(?,?,?)",
                 e.getId(),e.getOrderId(),e.getEventType());

@@ -11,6 +11,7 @@ public class ShopOrderMessageService {
  /** 注入消息访问层。 */
  public ShopOrderMessageService(ShopTradeEventRepository events) { this.events=events; }
  /** 查询当前用户消息及未读数；分页有界。 */
+ // 秒杀成功、支付与关单等通知只按 JWT 用户查询；消息不承担订单状态的权威来源。
  public Map<String,Object> list(String user,int page,int size) {
   requireUser(user);
   if(page<1||page>10000||size<1||size>50) throw new ShopException(400,"分页参数超出范围");

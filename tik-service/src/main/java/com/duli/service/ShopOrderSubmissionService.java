@@ -30,10 +30,15 @@ public class ShopOrderSubmissionService {
   this.orderTx=new TransactionTemplate(manager);this.orderTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
   this.orderTx.setTimeout(5);
  }
- /** 受理成功不表示买到；用户通过原请求号读取最终订单或拒绝原因。 */
+ /**
+  * HTTP 受理顺序：取得本机/Redis 名额 → 按用户和 requestId 找旧请求 → 检查排队软上限 →
+  * 同事务写请求与 ORDER_REQUEST Outbox。这里不读库存、不生成订单，QUEUED 仅表示等待消费。
+  * 重复请求依靠数据库唯一约束回查原结果，最后无论成功失败都释放本机名额。
+  */
  public ShopOrderRequest submit(String user,ShopOrderBO body) {
   guard.enter(user);
   try {
+   // 重试优先恢复同一 requestId 的旧结果，避免超时后重复排队或换商品复用编号。
    ShopOrderRequest existing=requests.find(user,body.getRequestId());
    if(existing!=null) return same(existing,body);
    if(requests.pending()>=maxPending) throw new ShopException(429,"排队人数已满，请稍后重试");
@@ -41,6 +46,7 @@ public class ShopOrderSubmissionService {
    try { payload=json.writeValueAsString(body); }
    catch(com.fasterxml.jackson.core.JsonProcessingException error) { throw new ShopException(400,"下单参数无法序列化"); }
    try {
+    // 请求记录与 ORDER_REQUEST Outbox 在一个事务提交；此阶段尚未占用库存。
     return tx.execute(status->{
      String id=UUID.randomUUID().toString().replace("-","");
      requests.insert(id,user,body,payload);
@@ -67,11 +73,16 @@ public class ShopOrderSubmissionService {
   if(r==null) throw new ShopException(404,"尚未受理该请求");
   return r;
  }
- /** 限量消费者执行库存事务；订单已提交但结果写入失败时重试找回原订单。 */
+ /**
+  * 消费顺序：按事件 ID 回查 MySQL → 锁请求 → 检查消费回执 → 在新事务中真正下单 →
+  * 写 SUCCEEDED/REJECTED → 与消费回执同事务提交。内层成功、外层失败时靠订单幂等恢复。
+  * 只有确定的业务拒绝转 REJECTED；技术故障抛出，由 MQ 与 Outbox 恢复。
+  */
  public void consume(String eventId) {
   tx.execute(status->{
    ShopTradeEvent event=events.find(eventId);
    if(event==null||!"ORDER_REQUEST".equals(event.getEventType())) throw new ShopException(400,"不是有效的下单事件");
+   // 锁住受理请求，使两个 MQ 消费者不能同时处理同一购买意图。
    ShopOrderRequest r=requests.lock(event.getOrderId());
    if(r==null) throw new ShopException(404,"下单请求不存在");
    if(events.consumed(eventId)) return null;
@@ -80,10 +91,12 @@ public class ShopOrderSubmissionService {
     try { body=json.readValue(r.getPayload(),ShopOrderBO.class); }
     catch(java.io.IOException error) { throw new IllegalStateException("Invalid persisted order request",error); }
     try {
+     // 真正的库存/订单使用新事务：外层持有请求锁，内层完成商品和活动扣减。
      ShopOrder order=orderTx.execute(inner->shop.place(r.getUserId(),body));
      requests.finish(r.getId(),"SUCCEEDED",order.getId(),"下单成功，请在十五分钟内支付");
     } catch(ShopException rejection) {
      if(!Arrays.asList(400,404,409).contains(rejection.getCode())) throw rejection;
+     // 仅确定的业务拒绝落 REJECTED；数据库或 MQ 故障要抛出以便重试。
      requests.finish(r.getId(),"REJECTED",null,rejection.getMessage());
     }
    }

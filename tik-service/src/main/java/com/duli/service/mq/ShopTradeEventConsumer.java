@@ -17,6 +17,7 @@ public class ShopTradeEventConsumer {
 
     /** 下单使用独立队列与两个消费线程，隔离订单库存热点与通知处理。 */
     @RabbitListener(queues="shop.order.queue",containerFactory="shopOrderListenerFactory")
+    // 受理事件进入独立队列；消费者按事件 ID 回查数据库并在受控线程内执行库存事务。
     public void order(String eventId) { submissions.consume(eventId); }
 
     /** MQ 只传事件 ID，消费端从数据库读取权威事件并幂等处理。 */

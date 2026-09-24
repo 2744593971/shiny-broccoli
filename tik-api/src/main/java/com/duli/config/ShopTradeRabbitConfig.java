@@ -26,6 +26,7 @@ public class ShopTradeRabbitConfig {
         Queue queue=QueueBuilder.durable(ShopTradeEventSender.QUEUE)
                 .deadLetterExchange(DEAD_EXCHANGE).deadLetterRoutingKey("dead").build();
         Queue dlq=QueueBuilder.durable(DEAD_QUEUE).build();
+        // 秒杀下单独立持久化队列，失败消息沿用交易死信交换机，避免通知消费挤占库存线程。
         Queue orders=QueueBuilder.durable("shop.order.queue")
                 .deadLetterExchange(DEAD_EXCHANGE).deadLetterRoutingKey("dead").build();
         return new Declarables(exchange,dead,queue,dlq,orders,

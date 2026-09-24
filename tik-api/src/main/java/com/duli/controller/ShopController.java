@@ -9,7 +9,7 @@ import javax.validation.Valid;
 
 /**
  * 商城接口。浏览商品/活动可匿名；订单接口由现有 JwtInterceptor 保护。
- * GET 只读，POST 创建演示订单；金额、库存、身份等可信字段在服务器计算。
+ * GET 只读，POST /order 只持久化购买意图并返回排队状态；金额、库存、身份等可信字段在服务器计算。
  */
 @RestController
 @RequestMapping("/shop")
@@ -28,16 +28,19 @@ public class ShopController {
                                     @RequestParam(defaultValue="12") int pageSize) {
         return GraceJSONResult.success(shop.products(page, pageSize, false));
     }
+    /** 只展示未结束的活动；页面显示的名额不是购买承诺，下单消费时会重新校验。 */
     @GetMapping("/seckill")
     public GraceJSONResult seckill(@RequestParam(defaultValue="1") int page,
                                    @RequestParam(defaultValue="12") int pageSize) {
         return GraceJSONResult.success(shop.products(page, pageSize, true));
     }
+    /** 返回商品/活动和数据库时间，供前端展示倒计时；购买资格仍以事务执行时为准。 */
     @GetMapping("/detail")
     public GraceJSONResult detail(@RequestParam String productId,
                                   @RequestParam(required=false) String activityId) {
         return GraceJSONResult.success(shop.detail(productId, activityId));
     }
+    /** JWT 身份 + 校验后的购买意图进入排队；响应中的请求记录 ID 不是订单 ID。 */
     @PostMapping("/order")
     public GraceJSONResult place(@RequestAttribute("currentUserId") String userId,
                                  @Valid @RequestBody ShopOrderBO input) {

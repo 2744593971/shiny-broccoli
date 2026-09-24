@@ -23,6 +23,7 @@ public class ShopOrderRequestRepository {
   return rows.isEmpty()?null:rows.get(0);
  }
  /** 消费时锁请求行，同一受理请求不会被两个消费者同时执行。 */
+ // FOR UPDATE 与消费外层事务配合，两个消费者即使收到同一事件，也只能串行处理同一请求。
  public ShopOrderRequest lock(String id) {
   List<ShopOrderRequest> rows=jdbc.query("SELECT * FROM shop_order_request WHERE id=? FOR UPDATE",ROW,id);
   return rows.isEmpty()?null:rows.get(0);
@@ -33,6 +34,7 @@ public class ShopOrderRequestRepository {
       id,user,body.getRequestId(),body.getProductId(),body.getActivityId(),payload);
  }
  /** 记录确定结果并清理请求正文，技术故障不能误写成业务失败。 */
+ // 只允许 QUEUED 转终态，并清空包含收货信息的 payload；终态重复消费不会改写结果。
  public void finish(String id,String status,String orderId,String message) {
   jdbc.update("UPDATE shop_order_request SET status=?,order_id=?,result_message=?,payload=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='QUEUED'",
       status,orderId,message,id);

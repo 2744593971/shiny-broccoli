@@ -21,6 +21,7 @@ public class ShopTradeEventSender {
     /** 使用固定消息 ID 和每次不同的相关 ID，发送后最多等待五秒确认。 */
     public void send(ShopTradeEvent event) throws Exception {
         CorrelationData correlation=new CorrelationData(event.getLeaseToken());
+        // 只有 ORDER_REQUEST 走库存热点队列；其他状态事件走交易通知队列。消息体只含事件 ID。
         rabbit.convertAndSend(EXCHANGE,"ORDER_REQUEST".equals(event.getEventType())?"shop.order":ROUTING_KEY,event.getId(),message->{
             message.getMessageProperties().setMessageId(event.getId());
             message.getMessageProperties().setDeliveryMode(MessageDeliveryMode.PERSISTENT);

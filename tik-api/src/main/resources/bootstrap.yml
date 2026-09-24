@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: tik-tok
+  cloud:
+    nacos:
+      config:
+        server-addr: 192.168.12.168:8848 # 找配置的
+        # 配置中心：项目在刚启动、还没完全苏醒时，会第一时间根据这个地址去找Nacos下载tik-tok-dev.yaml，
+        # 拿到数据库密码、Redis 端口号等关键属性。拿不到配置，项目就无法启动
+        # 对于一个大项目由于有多个微服务于是会有多套yml配置，因此nacos的配置中心里面也会有多个配置
+        # Data ID会非常清晰地对应各个微服务
+        file-extension: yaml

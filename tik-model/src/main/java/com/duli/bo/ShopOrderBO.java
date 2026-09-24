@@ -16,6 +16,7 @@ public class ShopOrderBO {
     private String productId;
 
     @Pattern(regexp = "[A-Za-z0-9_-]{1,32}", message = "活动编号格式错误")
+    // 有 activityId 才走秒杀活动时间/配额校验；空值表示普通购买。
     private String activityId;
 
     @NotBlank(message = "缺少请求编号")

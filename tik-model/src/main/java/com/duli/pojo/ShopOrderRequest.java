@@ -10,7 +10,9 @@ public class ShopOrderRequest {
  private String productId;
  private String activityId;
  @JsonIgnore private String payload;
+ // QUEUED=已受理未决；SUCCEEDED=真实订单已生成；REJECTED=确定的业务拒绝。
  private String status;
+ // 只有 SUCCEEDED 的 orderId 才是可进入订单详情的真实订单编号。
  private String orderId;
  private String resultMessage;
  private long createdAt;
