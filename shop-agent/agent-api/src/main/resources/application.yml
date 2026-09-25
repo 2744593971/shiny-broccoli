@@ -5,12 +5,16 @@ spring:
   ai:
     model:
       embedding: none
+    # 使用 Spring AI 的 OpenAI 兼容协议适配器调用阿里云百炼，不向 OpenAI 发送请求。
+    # 这里的 openai 是 Spring AI 固定的配置前缀；密钥只读取本机的百炼环境变量。
     openai:
-      api-key: ${OPENAI_API_KEY:}
-      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+      api-key: ${DASHSCOPE_API_KEY:}
+      base-url: ${DASHSCOPE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
       chat:
+        # 百炼 Base URL 已包含 /v1，避免使用适配器默认的 /v1/chat/completions 造成路径重复。
+        completions-path: /chat/completions
         options:
-          model: ${OPENAI_MODEL:gpt-4o-mini}
+          model: ${DASHSCOPE_MODEL:qwen-plus}
     mcp:
       client:
         name: tik-shop-agent

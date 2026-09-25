@@ -4,7 +4,7 @@
 
 ## 为什么独立运行
 
-现有商城后端 `../pom.xml` 使用 Spring Boot 2.5、Java 8；本工程使用 Java 17、Spring Boot 3.5.6、Spring AI 1.1.8。两个进程通过旧商城现有的只读 HTTP 接口连接，无需升级原有业务服务。
+现有商城后端 `../pom.xml` 使用 Spring Boot 2.5、Java 8；本工程使用 Java 17、Spring Boot 3.5.6、Spring AI 1.1.8。三个服务分别运行：旧商城后端、订单 MCP 服务、订单 Agent；它们通过只读 HTTP 接口连接，无需升级原有业务服务。
 
 ## 结构与调用流程
 
@@ -26,13 +26,15 @@
 | 位置 | 职责 |
 | --- | --- |
 | `agent-api/.../OrderAgentService.java` | **Tool calling**：`ChatClient.prompt().tools(guarded)` 把两个 MCP 查询工具提供给模型，并检查工具是否真的被调用；模型决定列表页码或订单号。 |
-| `agent-api/src/main/resources/application.yml` | **MCP Client**：连接 `order-mcp` 的 `/mcp` Streamable HTTP 端点。 |
+| `agent-api/src/main/resources/application.yml` | **百炼模型 + MCP Client**：用 `DASHSCOPE_API_KEY` 调用百炼千问，并连接 `order-mcp` 的 `/mcp` Streamable HTTP 端点。 |
 | `order-mcp/.../OrderMcpTools.java` | **MCP Server Tool**：`@McpTool` 定义 `list_my_orders`、`get_my_order`。 |
 | `order-mcp/src/main/resources/application.yml` | **MCP Server**：只监听本机 127.0.0.1:8087，采用 `STREAMABLE` 协议。 |
 | `order-mcp/.../OrderBackendClient.java` | 只调用旧商城两个 GET 接口，并把模型可见字段限制为订单号、标题、金额、状态和时间。 |
 | `../../tiktok/pages/shop/agent.vue` | Uni-app 查询输入页，从“我的订单”进入，经现有商城网关访问 Agent。 |
 
 **MCP 与 tool calling 的关系**：MCP 是 Agent 与订单工具服务之间的通信协议；tool calling 是模型提出工具调用、Spring AI 执行并把结果送回模型的过程。本项目的 MCP 工具恰好作为 Spring AI tool calling 的工具来源。
+
+**模型服务**：本项目使用阿里云百炼的千问模型，默认 `qwen-plus`。`spring-ai-starter-model-openai` 和 `spring.ai.openai` 是 Spring AI 的 **OpenAI 兼容协议适配器**名称；实际请求发往百炼的 `DASHSCOPE_BASE_URL`，认证使用 `DASHSCOPE_API_KEY`，无需 OpenAI API Key。请使用百炼的模型 API Key，而非阿里云 RAM AccessKey。百炼 Key 的地域和 Base URL 必须匹配；默认地址是华北 2（北京）的按量付费地址，其他地域或业务空间专属地址请在本机覆盖 `DASHSCOPE_BASE_URL`。Coding Plan / Token Plan 的专属 Key 不能用于这个后端服务。
 
 ## 身份和数据边界
 
@@ -50,13 +52,13 @@
 
 1. 先启动已有的 `tiktok-8077` 旧商城配置。
 2. 启动 `Shop Order MCP`。它默认把订单请求转到 `http://127.0.0.1:8077`；若旧商城使用其他端口，修改此配置中的 `SHOP_BACKEND_URL` 环境变量。
-3. 在 `Shop Order Agent` 的“编辑配置 → 环境变量”中填入自己的 `OPENAI_API_KEY`，再启动它。使用兼容接口时还可设置 `OPENAI_BASE_URL` 和 `OPENAI_MODEL`。密钥不要提交到 Git。
+3. 在 `Shop Order Agent` 的“编辑配置 → 环境变量”中填入自己的 `DASHSCOPE_API_KEY`（阿里云百炼模型 API Key），再启动它。如果 Key 不属于北京地域，另设 `DASHSCOPE_BASE_URL` 为控制台给出的同地域 OpenAI 兼容 Base URL；需要换模型时设置 `DASHSCOPE_MODEL`。密钥不要提交到 Git。
 4. 使用下方本机调用示例验证。手机端页面还需要把现有商城网关的 `/agent/` 转发到 8086。
 
-`OPENAI_API_KEY` 是模型服务的必需凭据；没有它，Agent 会在启动时明确报错。MCP 服务无需模型密钥。命令行也可从根目录运行 `mvn -pl shop-agent/order-mcp,shop-agent/agent-api -am test`。
+`DASHSCOPE_API_KEY` 是模型服务的必需凭据；没有它，Agent 会在启动时明确报错。MCP 服务无需模型密钥。Agent 启动成功只说明本地配置有效，实际模型调用还取决于百炼账户额度、地域和模型权限。命令行也可从根目录运行 `mvn -pl shop-agent/order-mcp,shop-agent/agent-api -am test`。
 ## 启动
 
-前提：Java 17、Maven、已启动的旧商城后端、一个支持工具调用的 OpenAI 兼容模型及其 API Key。
+前提：Java 17、Maven、已启动的旧商城后端，以及可调用千问模型的阿里云百炼 API Key。
 
 ```powershell
 cd D:\tiktok\itiktok\shop-agent
@@ -69,9 +71,10 @@ java -jar order-mcp\target\order-mcp-1.0.0.jar
 
 ```powershell
 cd D:\tiktok\itiktok\shop-agent
-$env:OPENAI_API_KEY = "你的密钥"
-$env:OPENAI_MODEL = "gpt-4o-mini" # 或支持 tool calling 的兼容模型
-# 可选：$env:OPENAI_BASE_URL = "https://你的兼容接口根地址"
+$env:DASHSCOPE_API_KEY = "你的阿里云百炼密钥"
+# 可选：$env:DASHSCOPE_MODEL = "qwen-plus"
+# 非北京地域时，改为百炼控制台给出的同地域 OpenAI 兼容 Base URL（需包含 /v1）。
+# 可选：$env:DASHSCOPE_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 # 可选：$env:ORDER_MCP_URL = "http://127.0.0.1:8087"
 java -jar agent-api\target\agent-api-1.0.0.jar
 ```
@@ -113,3 +116,5 @@ mvn test
 - [Spring AI 1.1 Tool Calling](https://docs.spring.io/spring-ai/reference/1.1/api/tools.html)
 - [Spring AI 1.1 MCP Client](https://docs.spring.io/spring-ai/reference/1.1/api/mcp/mcp-client-boot-starter-docs.html)
 - [Spring AI 1.1 MCP Server](https://docs.spring.io/spring-ai/reference/1.1/api/mcp/mcp-server-boot-starter-docs.html)
+- [阿里云百炼 Base URL 总览](https://help.aliyun.com/zh/model-studio/base-url)
+- [阿里云百炼 Function Calling](https://help.aliyun.com/zh/model-studio/qwen-function-calling)
