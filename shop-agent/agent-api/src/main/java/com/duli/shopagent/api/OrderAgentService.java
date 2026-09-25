@@ -41,10 +41,11 @@ public class OrderAgentService {
         for (int i = 0; i < callbacks.length; i++) {
             guarded[i] = markOnCall(callbacks[i], queried);
         }
-        // 仅这一请求提供查询工具；Token 只在 ToolContext，模型看不到。
+        // 仅这一请求提供 MCP 查询工具。guarded 是 ToolCallback，必须传给 toolCallbacks()。
+        // Token 只在 ToolContext，模型看不到。
         String answer = chatClient.prompt()
                 .user(instruction)
-                .tools(guarded)
+                .toolCallbacks(guarded)
                 .toolContext(Map.of("authToken", token))
                 .call().content();
         // 提示词不是安全边界：模型若未查询工具，不能把自述的订单信息当事实返回。

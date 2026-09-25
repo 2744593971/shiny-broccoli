@@ -25,7 +25,7 @@
 
 | 位置 | 职责 |
 | --- | --- |
-| `agent-api/.../OrderAgentService.java` | **Tool calling**：`ChatClient.prompt().tools(guarded)` 把两个 MCP 查询工具提供给模型，并检查工具是否真的被调用；模型决定列表页码或订单号。 |
+| `agent-api/.../OrderAgentService.java` | **Tool calling**：`ChatClient.prompt().toolCallbacks(guarded)` 把两个 MCP 查询工具提供给模型，并检查工具是否真的被调用；模型决定列表页码或订单号。 |
 | `agent-api/src/main/resources/application.yml` | **百炼模型 + MCP Client**：用 `DASHSCOPE_API_KEY` 调用百炼千问，并连接 `order-mcp` 的 `/mcp` Streamable HTTP 端点。 |
 | `order-mcp/.../OrderMcpTools.java` | **MCP Server Tool**：`@McpTool` 定义 `list_my_orders`、`get_my_order`。 |
 | `order-mcp/src/main/resources/application.yml` | **MCP Server**：只监听本机 127.0.0.1:8087，采用 `STREAMABLE` 协议。 |
@@ -52,7 +52,7 @@
 
 1. 先启动已有的 `tiktok-8077` 旧商城配置。
 2. 启动 `Shop Order MCP`。它默认把订单请求转到 `http://127.0.0.1:8077`；若旧商城使用其他端口，修改此配置中的 `SHOP_BACKEND_URL` 环境变量。
-3. 在 `Shop Order Agent` 的“编辑配置 → 环境变量”中填入自己的 `DASHSCOPE_API_KEY`（阿里云百炼模型 API Key），再启动它。如果 Key 不属于北京地域，另设 `DASHSCOPE_BASE_URL` 为控制台给出的同地域 OpenAI 兼容 Base URL；需要换模型时设置 `DASHSCOPE_MODEL`。密钥不要提交到 Git。
+3. 在 Windows 用户环境变量中设置 `DASHSCOPE_API_KEY`（阿里云百炼模型 API Key），完全退出并重新打开 IDEA 后再启动 Agent。不要把密钥写入共享的 `.run` 配置。如果 Key 不属于北京地域，另设 `DASHSCOPE_BASE_URL` 为控制台给出的同地域 OpenAI 兼容 Base URL；需要换模型时设置 `DASHSCOPE_MODEL`。密钥不要提交到 Git。
 4. 使用下方本机调用示例验证。手机端页面还需要把现有商城网关的 `/agent/` 转发到 8086。
 
 `DASHSCOPE_API_KEY` 是模型服务的必需凭据；没有它，Agent 会在启动时明确报错。MCP 服务无需模型密钥。Agent 启动成功只说明本地配置有效，实际模型调用还取决于百炼账户额度、地域和模型权限。命令行也可从根目录运行 `mvn -pl shop-agent/order-mcp,shop-agent/agent-api -am test`。
@@ -109,8 +109,13 @@ Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8086/agent/orders/query" -
 mvn test
 ```
 
-测试验证了匿名请求被拒绝、Token 透传、旧商城 HTTP 200 但业务失败时不误判成功，以及敏感字段不会进入模型返回值。
+测试验证了匿名请求被拒绝、Token 透传、MCP ToolCallback 正确注册、旧商城 HTTP 200 但业务失败时不误判成功，以及敏感字段不会进入模型返回值。
 
+## 查询失败排查
+
+- 前端提示“订单查询暂不可用”时，先看 Agent 控制台的最底层 `Caused by`。`No @Tool annotated methods found` 表示误把 `ToolCallback` 传给 `tools()`；此项目应使用 `toolCallbacks()`。
+- Agent 能启动但模型请求返回 `401 invalid_api_key` 时，请在百炼模型服务控制台复制通用 API Key（以 `sk-` 开头）。不要使用 RAM AccessKey，也不要把引号或空格复制进变量。Key 的地域须与 `DASHSCOPE_BASE_URL` 对应；修改 Windows 用户变量后完全重启 IDEA。
+- 如果 Nginx 在虚拟机 `192.168.12.168`，Agent 在 Windows `192.168.12.1`，须让 Agent 的 `SERVER_ADDRESS=192.168.12.1`，并把虚拟机的 `/agent/` 单独代理到 `http://192.168.12.1:8086`。MCP 仍留在 `127.0.0.1:8087`。
 ## 相关官方文档
 
 - [Spring AI 1.1 Tool Calling](https://docs.spring.io/spring-ai/reference/1.1/api/tools.html)
