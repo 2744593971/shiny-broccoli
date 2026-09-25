@@ -1,0 +1,15 @@
+server:
+  address: 127.0.0.1
+  port: ${ORDER_MCP_PORT:8087}
+spring:
+  ai:
+    mcp:
+      server:
+        name: tik-shop-orders
+        version: 1.0.0
+        type: SYNC
+        protocol: STREAMABLE
+        annotation-scanner:
+          enabled: true
+shop:
+  backend-base-url: ${SHOP_BACKEND_URL:http://127.0.0.1:8080}

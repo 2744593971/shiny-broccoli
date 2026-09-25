@@ -1,0 +1,10 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Shop Order Agent" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <!-- OPENAI_API_KEY 属于个人密钥：从操作系统环境继承，或只在本机的 IDEA 配置中填写。 -->
+    <module name="agent-api" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.duli.shopagent.api.AgentApiApplication" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

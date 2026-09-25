@@ -1,0 +1,13 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Shop Order MCP" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <envs>
+      <!-- 与项目现有的 tiktok-8077 启动配置对应；若旧后端端口变化，可在 IDEA 中修改。 -->
+      <env name="SHOP_BACKEND_URL" value="http://127.0.0.1:8077" />
+    </envs>
+    <module name="order-mcp" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.duli.shopagent.mcp.OrderMcpApplication" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

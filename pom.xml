@@ -23,6 +23,7 @@
         <module>tik-mapper</module>
         <module>tik-model</module>
         <module>tik-common</module>
+        <module>shop-agent</module>
     </modules>
 
     <properties>
